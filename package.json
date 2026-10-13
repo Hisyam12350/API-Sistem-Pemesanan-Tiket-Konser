@@ -1,4 +1,20 @@
 {
+  "name": "api-tiket-konser",
+  "version": "1.0.0",
+  "description": "Backend REST API sistem pemesanan tiket konser (Express + Supabase)",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "node --watch app.js"
+  },
+  "keywords": [
+    "tiket",
+    "konser",
+    "api",
+    "express",
+    "supabase"
+  ],
+  "license": "ISC",
   "dependencies": {
     "@supabase/server": "^1.4.1",
     "@supabase/ssr": "^0.12.4",
