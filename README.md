@@ -12,10 +12,10 @@ Backend REST API untuk sistem **pemesanan tiket konser** — dibangun dengan **N
 - **Multi-Role** — `SuperAdmin`, `Admin`, `Customer`, `Scanner` dengan kontrol akses per endpoint.
 - **Manajemen Event** — CRUD event + upload banner ke Supabase Storage.
 - **Kategori Tiket** — CRUD kategori tiket per event (harga, kuota) dengan tracking kuota otomatis.
+- **Kursi & Seat Locking** — Generate kursi massal per kategori, lock kursi sementara (anti rebutan), dan unlock.
 - **Keamanan** — Password di-hash dengan bcrypt, token JWT, validasi input.
 
 ### 🚧 Sedang Dikembangkan (Roadmap)
-- Seats & Seat Locking (pemilihan kursi spesifik)
 - Orders / Checkout (dengan batas waktu bayar 15 menit)
 - Payments (integrasi & konfirmasi pembayaran)
 - E-Ticket + QR Code
@@ -175,6 +175,16 @@ Base URL: `/api`
 | PUT | `/api/ticket-categories/:id` | Admin/SuperAdmin | Update kategori |
 | DELETE | `/api/ticket-categories/:id` | Admin/SuperAdmin | Hapus kategori |
 
+### 💺 Seats (Kursi)
+| Method | Endpoint | Akses | Keterangan |
+|---|---|---|---|
+| GET | `/api/seats?kategori_id=` | Publik | Daftar kursi suatu kategori + status (`available`/`locked`/`booked`) |
+| POST | `/api/seats/generate` | Admin/SuperAdmin | Generate kursi massal. Body: `{ kategori_id, jumlah, prefix?, start_number? }` |
+| POST | `/api/seats/lock` | Customer/Admin | Lock kursi sementara. Body: `{ seat_ids: [..], minutes? }` (default 15 mnt) |
+| POST | `/api/seats/unlock` | Customer/Admin | Buka lock kursi. Body: `{ seat_ids: [..] }` |
+
+> **Catatan Seat Locking:** Penguncian bersifat **atomik** — jika salah satu kursi sudah di-lock/dibooking user lain, seluruh permintaan lock dibatalkan (tidak ada kursi yang tertahan). Update terkondisi `status='available'` mencegah dua user merebut kursi yang sama.
+
 ### 🔑 Cara Autentikasi
 Endpoint bertanda **Login/Admin/SuperAdmin** memerlukan header:
 ```
@@ -207,19 +217,22 @@ API/
 │   ├── authController.js
 │   ├── userController.js
 │   ├── eventsController.js
-│   └── ticketCategoriesController.js
+│   ├── ticketCategoriesController.js
+│   └── seatsController.js
 ├── middleware/
 │   ├── authMiddleware.js          # verifyToken & authorizeRoles
 │   └── uploadMiddleware.js        # Konfigurasi multer (upload gambar)
 ├── models/                        # Akses data ke database (Supabase/pg)
 │   ├── userModel.js
 │   ├── events.js
-│   └── ticketCategories.js
+│   ├── ticketCategories.js
+│   └── seats.js
 ├── routes/                        # Definisi endpoint per resource
 │   ├── authRoutes.js
 │   ├── userRoutes.js
 │   ├── eventRoutes.js
-│   └── ticketCategoryRoutes.js
+│   ├── ticketCategoryRoutes.js
+│   └── seatRoutes.js
 ├── utils/
 │   └── storageService.js          # Upload/hapus file ke Supabase Storage
 ├── app.js                         # Entry point aplikasi
