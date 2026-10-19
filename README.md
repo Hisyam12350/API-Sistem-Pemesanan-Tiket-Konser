@@ -237,7 +237,8 @@ API/
 ├── config/
 │   ├── schema.sql                 # Skema database lengkap (tabel, enum, trigger, index)
 │   ├── migrations/                # File migrasi bertahap
-│   │   └── 001_add_order_item_seats.sql
+│   │   ├── 001_add_order_item_seats.sql
+│   │   └── 002_venues_google_places.sql
 │   ├── supabase.js                # Inisialisasi Supabase client
 │   ├── db.js                      # PostgreSQL connection pool (pg)
 │   └── jwt.js                     # Sumber tunggal konfigurasi JWT
@@ -246,7 +247,9 @@ API/
 │   ├── userController.js
 │   ├── eventsController.js
 │   ├── ticketCategoriesController.js
-│   └── seatsController.js
+│   ├── seatsController.js
+│   ├── venueTypesController.js    # CRUD master tipe tempat (Stadion, Indoor, Outdoor, Lapangan)
+│   └── venuesController.js        # CRUD venue + proxy Google Places (cari-google, simpan-dari-google)
 ├── middleware/
 │   ├── authMiddleware.js          # verifyToken & authorizeRoles
 │   └── uploadMiddleware.js        # Konfigurasi multer (upload gambar)
@@ -254,15 +257,21 @@ API/
 │   ├── userModel.js
 │   ├── events.js
 │   ├── ticketCategories.js
-│   └── seats.js
+│   ├── seats.js
+│   ├── venueTypes.js              # Model tabel venue_types
+│   └── venues.js                  # Model tabel venues
 ├── routes/                        # Definisi endpoint per resource
 │   ├── authRoutes.js
 │   ├── userRoutes.js
 │   ├── eventRoutes.js
 │   ├── ticketCategoryRoutes.js
-│   └── seatRoutes.js
-├── utils/
-│   └── storageService.js          # Upload/hapus file ke Supabase Storage
+│   ├── seatRoutes.js
+│   ├── venueTypeRoutes.js         # GET/POST/DELETE /api/venue-types
+│   └── venueRoutes.js             # GET/POST/PUT/DELETE /api/venues + cari-google & simpan-dari-google
+├── utils/                         # Utilitas & helper
+│   ├── storageService.js          # Upload/hapus file ke Supabase Storage
+│   ├── venueClassifier.js         # Klasifikasi otomatis venue Google ke venue_types
+│   └── googlePlacesService.js     # Proxy Google Places API (autocomplete + place details)
 ├── app.js                         # Entry point aplikasi
 └── package.json
 ```
@@ -298,7 +307,7 @@ curl -X POST http://localhost:5000/api/ticket-categories \
 ## ⚠️ Catatan Penting
 
 - **`JWT_SECRET` wajib diset** di `.env`. Fallback default hanya untuk development — jangan dipakai di produksi.
-- Jalankan **migration terbaru** agar tabel `order_item_seats` dan trigger terbaru tersedia.
+- Jalankan **migration terbaru secara berurutan** (`001_add_order_item_seats.sql` lalu `002_venues_google_places.sql`) agar tabel `order_item_seats`, `venue_types`, `venues`, dan trigger terbaru tersedia.
 - **Jangan commit file `.env`** ke repository (pastikan sudah masuk `.gitignore`).
 - Kolom `orders` menggunakan nama `cutsomer_id` (sesuai skema Supabase yang ada) — perhatikan saat query.
 
