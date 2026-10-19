@@ -10,10 +10,11 @@ Backend REST API untuk sistem **pemesanan tiket konser** — dibangun dengan **N
 
 - **Autentikasi & Otorisasi** — Register, Login (JWT), dan profil user.
 - **Multi-Role** — `SuperAdmin`, `Admin`, `Customer`, `Scanner` dengan kontrol akses per endpoint.
-- **Manajemen Event** — CRUD event + upload banner ke Supabase Storage.
+- **Manajemen Event** — CRUD event + upload banner ke Supabase Storage + relasi venue (Step 1–2: pilih tempat lalu isi detail).
+- **Venue & Google Maps** — Master tipe tempat (Stadion/Indoor/Outdoor/Lapangan), daftar venue dengan filter kategori + search + pagination, pencarian via Google Places & simpan otomatis beserta klasifikasi tipe.
 - **Kategori Tiket** — CRUD kategori tiket per event (harga, kuota) dengan tracking kuota otomatis.
 - **Kursi & Seat Locking** — Generate kursi massal per kategori, lock kursi sementara (anti rebutan), dan unlock.
-- **Keamanan** — Password di-hash dengan bcrypt, token JWT, validasi input.
+- **Keamanan** — Password di-hash dengan bcrypt, token JWT, validasi input, API key Google hanya di backend.
 
 ### 🚧 Sedang Dikembangkan (Roadmap)
 - Orders / Checkout (dengan batas waktu bayar 15 menit)
@@ -43,7 +44,9 @@ Backend REST API untuk sistem **pemesanan tiket konser** — dibangun dengan **N
 | Tabel | Keterangan |
 |---|---|
 | `users` | Data pengguna & role |
-| `events` | Data event/konser |
+| `events` | Data event/konser (+ `venue_id`, `deskripsi`, `detail_lokasi`) |
+| `venue_types` | Master tipe tempat (Stadion, Indoor, Outdoor, Lapangan) |
+| `venues` | Daftar tempat (+ kolom Google: `google_place_id`, koordinat, `sumber_data`) |
 | `ticket_categories` | Kategori tiket per event (VIP, Festival, dll) + kuota |
 | `seats` | Kursi per kategori + status & waktu lock |
 | `orders` | Pesanan (status, total, batas waktu bayar) |
@@ -67,6 +70,8 @@ Backend REST API untuk sistem **pemesanan tiket konser** — dibangun dengan **N
 ```mermaid
 erDiagram
     users ||--o{ orders : "memesan"
+    venue_types ||--o{ venues : "mengkategorikan"
+    venues ||--o{ events : "menjadi lokasi"
     events ||--o{ ticket_categories : "memiliki"
     ticket_categories ||--o{ seats : "memiliki"
     orders ||--o{ order_items : "berisi"
@@ -105,8 +110,9 @@ npm install
 ### 2. Setup Database
 1. Buka proyek Supabase Anda → **SQL Editor**.
 2. Jalankan isi file `config/schema.sql` untuk membuat seluruh tabel, enum, dan trigger.
-3. Jika sudah pernah setup sebelumnya, jalankan migration terbaru:
-   `config/migrations/001_add_order_item_seats.sql`
+3. Jika sudah pernah setup sebelumnya, jalankan migration terbaru secara berurutan:
+   `config/migrations/001_add_order_item_seats.sql` lalu
+   `config/migrations/002_venues_google_places.sql`
 
 ### 3. Konfigurasi Environment
 Salin contoh berikut ke file `.env` di root proyek, lalu isi dengan kredensial Supabase Anda:
@@ -126,6 +132,10 @@ DATABASE_URL=postgresql://user:password@host:5432/postgres
 
 # Port server (opsional, default 5000)
 PORT=5000
+
+# Google Maps (Places API New) — WAJIB untuk /api/venues/cari-google & /api/venues/simpan-dari-google
+# Tanpa ini kedua endpoint mengembalikan 503 (endpoint lain tetap jalan)
+GOOGLE_MAPS_API_KEY=isi_dengan_api_key_google_maps_anda
 ```
 
 ### 4. Jalankan Server
@@ -162,9 +172,27 @@ Base URL: `/api`
 |---|---|---|---|
 | GET | `/api/events` | Publik | Daftar semua event |
 | GET | `/api/events/:id` | Publik | Detail event |
-| POST | `/api/events` | Admin/SuperAdmin | Buat event (upload banner) |
-| PUT | `/api/events/:id` | Admin/SuperAdmin | Update event |
+| POST | `/api/events` | Admin/SuperAdmin | Buat event (upload banner). Step 2: terima `venue_id`, `deskripsi`, `detail_lokasi`; `lokasi` diisi otomatis dari venue bila kosong |
+| PUT | `/api/events/:id` | Admin/SuperAdmin | Update event (bisa ganti/lepas venue) |
 | DELETE | `/api/events/:id` | Admin/SuperAdmin | Hapus event |
+
+### 🏟️ Venue Types (Tipe Tempat — Step 1)
+| Method | Endpoint | Akses | Keterangan |
+|---|---|---|---|
+| GET | `/api/venue-types` | Publik | Daftar tipe (Stadion, Indoor, Outdoor, Lapangan) |
+| POST | `/api/venue-types` | Admin/SuperAdmin | Tambah tipe tempat |
+| DELETE | `/api/venue-types/:id` | Admin/SuperAdmin | Hapus tipe (ditolak 409 bila masih dipakai venue) |
+
+### 📍 Venues (Tempat — Step 1)
+| Method | Endpoint | Akses | Keterangan |
+|---|---|---|---|
+| GET | `/api/venues?venue_type_id=&search=&kota=&page=&limit=` | Publik | Daftar venue: filter kategori + search nama/alamat/kota + pagination |
+| GET | `/api/venues/:id` | Publik | Detail venue (nama + alamat + koordinat) |
+| POST | `/api/venues/cari-google` | Login | Proxy Google Places Autocomplete. Body: `{ input, session_token }` (1 token per sesi ketik) |
+| POST | `/api/venues/simpan-dari-google` | Admin/SuperAdmin | Simpan venue dari Google. Body: `{ place_id, venue_type_id? }` — klasifikasi otomatis, fallback 422 bila ambigu |
+| POST | `/api/venues` | Admin/SuperAdmin | Buat venue manual |
+| PUT | `/api/venues/:id` | Admin/SuperAdmin | Update venue |
+| DELETE | `/api/venues/:id` | Admin/SuperAdmin | Hapus venue (ditolak 409 bila masih dipakai event) |
 
 ### 🎟️ Ticket Categories
 | Method | Endpoint | Akses | Keterangan |

@@ -1,5 +1,5 @@
 -- 1. Hapus jika ada yang lama
-DROP TABLE IF EXISTS tickets, payments, order_item_seats, order_items, orders, seats, ticket_categories, events, users CASCADE;
+DROP TABLE IF EXISTS tickets, payments, order_item_seats, order_items, orders, seats, ticket_categories, events, venue_types, venues, users CASCADE;
 DROP TYPE IF EXISTS Role, event_status, order_status, payment_status, ticket_status, seat_status CASCADE;
 
 -- 2. Buat Tipe Enum
@@ -23,10 +23,39 @@ CREATE TABLE users (
 CREATE TABLE events (
   id BIGSERIAL PRIMARY KEY,
   nama_event TEXT NOT NULL,
-  lokasi TEXT NOT NULL,
+  lokasi TEXT,
   waktu_event TIMESTAMPTZ NOT NULL,
   banner_url TEXT,
   status event_status DEFAULT 'upcoming',
+  venue_id INT8 REFERENCES venues(id) ON DELETE SET NULL,
+  deskripsi TEXT,
+  detail_lokasi TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Master tipe tempat (Stadion, Indoor, Outdoor, Lapangan, ...)
+CREATE TABLE venue_types (
+  id BIGSERIAL PRIMARY KEY,
+  nama_tipe TEXT UNIQUE NOT NULL,
+  deskripsi TEXT,
+  ikon TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Daftar tempat konser (+ kolom integrasi Google Maps)
+CREATE TABLE venues (
+  id BIGSERIAL PRIMARY KEY,
+  venue_type_id INT8 NOT NULL REFERENCES venue_types(id) ON DELETE RESTRICT,
+  nama_venue TEXT NOT NULL,
+  alamat TEXT NOT NULL,
+  kota TEXT,
+  kapasitas INT,
+  gambar_url TEXT,
+  google_place_id TEXT UNIQUE,
+  latitude NUMERIC(10,7),
+  longitude NUMERIC(10,7),
+  sumber_data TEXT NOT NULL DEFAULT 'manual',
+  terakhir_sinkron TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -211,3 +240,23 @@ CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(cutsomer_id);
 CREATE INDEX IF NOT EXISTS idx_seats_kategori_id ON seats(kategori_id);
 CREATE INDEX IF NOT EXISTS idx_payments_order_id ON payments(order_id);
 CREATE INDEX IF NOT EXISTS idx_ois_order_item_id ON order_item_seats(order_item_id);
+
+-- ====================================================================
+-- Seed tipe tempat dasar
+-- ====================================================================
+INSERT INTO venue_types (nama_tipe, deskripsi, ikon) VALUES
+  ('Stadion', 'Stadion terbuka berkapasitas besar dengan tribun penonton', 'trophy'),
+  ('Indoor', 'Gedung atau aula tertutup (convention hall, istora, dsb.)', 'building-2'),
+  ('Outdoor', 'Area terbuka tanpa atap permanen (pantai, parkir, taman)', 'tent'),
+  ('Lapangan', 'Lapangan olahraga atau area terbuka dengan panggung sementara', 'flag')
+ON CONFLICT (nama_tipe) DO NOTHING;
+
+-- Index venue: filter kategori + search + join
+CREATE INDEX IF NOT EXISTS idx_venues_type_id ON venues(venue_type_id);
+CREATE INDEX IF NOT EXISTS idx_venues_kota ON venues(kota);
+CREATE INDEX IF NOT EXISTS idx_venues_google_place_id ON venues(google_place_id);
+CREATE INDEX IF NOT EXISTS idx_events_venue_id ON events(venue_id);
+
+-- Index trigram agar search ILIKE tetap cepat saat data banyak
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX IF NOT EXISTS idx_venues_search_trgm ON venues USING gin (nama_venue gin_trgm_ops, alamat gin_trgm_ops, kota gin_trgm_ops);
