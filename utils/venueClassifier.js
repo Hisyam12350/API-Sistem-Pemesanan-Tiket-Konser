@@ -24,8 +24,8 @@ const GOOGLE_TYPE_MAP = {
 // Fallback keyword (dicocokkan berurutan, yang pertama cocok menang)
 const KEYWORD_RULES = [
   { tipe: 'Stadion', keywords: ['stadion', 'stadium', 'gelora'] },
-  { tipe: 'Indoor', keywords: ['indoor', 'hall', 'convention', 'istora', 'gedung', 'aula', 'ballroom', 'jiexpo', 'ji expo', 'ice '] },
-  { tipe: 'Lapangan', keywords: ['lapangan', 'gor '] },
+  { tipe: 'Indoor', keywords: ['indoor', 'hall', 'convention', 'istora', 'gedung', 'aula', 'ballroom', 'jiexpo', 'ji expo', 'ice'] },
+  { tipe: 'Lapangan', keywords: ['lapangan', 'gor'] },
   { tipe: 'Outdoor', keywords: ['outdoor', 'pantai', 'beach', 'parkir', 'taman', 'alun-alun', 'alun alun'] },
 ];
 

@@ -37,6 +37,9 @@ const venuesController = {
       if (!venue_type_id || !nama_venue || !alamat) {
         return res.status(400).json({ success: false, message: 'venue_type_id, nama_venue, dan alamat wajib diisi.' });
       }
+      if (kapasitas !== undefined && kapasitas !== null && (isNaN(Number(kapasitas)) || Number(kapasitas) <= 0)) {
+        return res.status(400).json({ success: false, message: 'kapasitas harus berupa angka lebih besar dari 0.' });
+      }
       const tipe = await VenueType.getTypeById(venue_type_id);
       if (!tipe) {
         return res.status(404).json({ success: false, message: 'Tipe tempat dengan ID ' + venue_type_id + ' tidak ditemukan.' });
@@ -61,6 +64,9 @@ const venuesController = {
         if (!tipe) {
           return res.status(404).json({ success: false, message: 'Tipe tempat dengan ID ' + venue_type_id + ' tidak ditemukan.' });
         }
+      }
+      if (kapasitas !== undefined && kapasitas !== null && (isNaN(Number(kapasitas)) || Number(kapasitas) <= 0)) {
+        return res.status(400).json({ success: false, message: 'kapasitas harus berupa angka lebih besar dari 0.' });
       }
       const result = await Venue.updateVenue(id, { venue_type_id, nama_venue, alamat, kota, kapasitas, gambar_url });
       res.status(200).json({ success: true, message: 'Tempat berhasil diperbarui', data: result });
@@ -95,7 +101,7 @@ const venuesController = {
       const suggestions = await googlePlaces.autocomplete({ input: String(input).trim(), sessionToken: session_token });
       res.status(200).json({ success: true, message: 'Saran tempat dari Google Maps', data: suggestions });
     } catch (error) {
-      res.status(toStatusCode(error), { success: false, message: error.message });
+      res.status(toStatusCode(error)).json({ success: false, message: error.message });
     }
   },
 
@@ -150,7 +156,7 @@ const venuesController = {
       if (error.code === '23505') {
         return res.status(409).json({ success: false, message: 'Tempat ini sudah tersimpan (duplikat place_id).' });
       }
-      res.status(toStatusCode(error), { success: false, message: error.message });
+      res.status(toStatusCode(error)).json({ success: false, message: error.message });
     }
   },
 };

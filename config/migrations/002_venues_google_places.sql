@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS venues (
 -- ---------------------------------------------------------------------
 -- 3. Kolom baru di events (semua opsional -> aman untuk data lama)
 -- ---------------------------------------------------------------------
-ALTER TABLE events ADD COLUMN IF NOT EXISTS venue_id INT8 REFERENCES venues(id) ON DELETE SET NULL;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS venue_id INT8 REFERENCES venues(id) ON DELETE RESTRICT;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS deskripsi TEXT;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS detail_lokasi TEXT;
 

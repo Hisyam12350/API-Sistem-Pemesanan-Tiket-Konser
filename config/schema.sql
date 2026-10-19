@@ -27,7 +27,7 @@ CREATE TABLE events (
   waktu_event TIMESTAMPTZ NOT NULL,
   banner_url TEXT,
   status event_status DEFAULT 'upcoming',
-  venue_id INT8 REFERENCES venues(id) ON DELETE SET NULL,
+  venue_id INT8 REFERENCES venues(id) ON DELETE RESTRICT,
   deskripsi TEXT,
   detail_lokasi TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()

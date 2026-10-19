@@ -66,7 +66,7 @@ async function getPlaceDetails(placeId, languageCode = 'id') {
     place_id: d.id || placeId,
     nama: d.displayName && d.displayName.text ? d.displayName.text : null,
     alamat: d.formattedAddress || null,
-    kota: comp.longText || comp.shortText || null,
+    kota: comp.long_name || comp.short_name || null,
     latitude: d.location ? d.location.latitude : null,
     longitude: d.location ? d.location.longitude : null,
     types: d.types || [],

@@ -50,7 +50,9 @@ const eventController = {
           });
         }
         if (!finalLokasi) {
-          finalLokasi = venue.nama_venue + ', ' + venue.alamat;
+          finalLokasi = venue.alamat
+            ? venue.nama_venue + ', ' + venue.alamat
+            : venue.nama_venue;
         }
       } else if (!finalLokasi) {
         // MODE MANUAL: tanpa venue, lokasi wajib diketik manual (kompatibel event lama)
