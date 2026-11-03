@@ -1,6 +1,6 @@
 const supabase = require('../config/supabase.js');
 
-const SELECT_COLUMNS = 'id, venue_type_id, nama_venue, alamat, kota, kapasitas, gambar_url, google_place_id, latitude, longitude, sumber_data, terakhir_sinkron, created_at';
+const SELECT_COLUMNS = 'id, venue_type_id, nama_venue, alamat, kota, kapasitas, gambar_url, created_at';
 
 // Escape karakter LIKE/ILIKE (%, _, backslash) agar input search tidak bocor jadi pola
 function escapeLike(s) {
@@ -46,17 +46,7 @@ const Venue = {
     return data;
   },
 
-  async findByGooglePlaceId(placeId) {
-    const { data, error } = await supabase
-      .from('venues')
-      .select(SELECT_COLUMNS)
-      .eq('google_place_id', placeId)
-      .maybeSingle();
-    if (error) throw error;
-    return data;
-  },
-
-  async createVenue({ venue_type_id, nama_venue, alamat, kota, kapasitas, gambar_url, google_place_id, latitude, longitude, sumber_data }) {
+  async createVenue({ venue_type_id, nama_venue, alamat, kota, kapasitas, gambar_url }) {
     const { data, error } = await supabase
       .from('venues')
       .insert([{
@@ -66,11 +56,6 @@ const Venue = {
         kota: kota || null,
         kapasitas: kapasitas !== undefined ? kapasitas : null,
         gambar_url: gambar_url || null,
-        google_place_id: google_place_id || null,
-        latitude: latitude !== undefined ? latitude : null,
-        longitude: longitude !== undefined ? longitude : null,
-        sumber_data: sumber_data || 'manual',
-        terakhir_sinkron: google_place_id ? new Date().toISOString() : null,
       }])
       .select(SELECT_COLUMNS)
       .single();

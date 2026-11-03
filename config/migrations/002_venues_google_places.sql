@@ -1,10 +1,9 @@
 -- =====================================================================
--- Migration 002: Venue & Google Maps (Step 1 Pemilihan Tempat Event)
+-- Migration 002: Venue & Tempat Event (Step 1 Pemilihan Tempat)
 -- Tujuan:
 --   1. Tabel master venue_types (Stadion, Indoor, Outdoor, Lapangan...)
 --      + seed 4 tipe dasar (idempotent).
---   2. Tabel venues: daftar tempat konser, termasuk kolom integrasi
---      Google Maps (google_place_id, latitude, longitude, sumber_data).
+--   2. Tabel venues: daftar tempat konser (input alamat manual).
 --   3. Kolom baru di events: venue_id (nullable), deskripsi,
 --      detail_lokasi; kolom lokasi jadi opsional (diisi otomatis dari
 --      venue bila kosong oleh backend).
@@ -36,7 +35,7 @@ ON CONFLICT (nama_tipe) DO NOTHING;
 -- ---------------------------------------------------------------------
 -- 2. Tabel venues
 --    - venue_type_id RESTRICT: tipe yang masih dipakai tak bisa dihapus.
---    - google_place_id UNIQUE: cegah venue yang sama dari Google tersimpan ganda.
+--    - Alamat, kota, kapasitas diisi secara manual oleh admin.
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS venues (
   id BIGSERIAL PRIMARY KEY,
@@ -46,11 +45,6 @@ CREATE TABLE IF NOT EXISTS venues (
   kota TEXT,
   kapasitas INT,
   gambar_url TEXT,
-  google_place_id TEXT UNIQUE,
-  latitude NUMERIC(10,7),
-  longitude NUMERIC(10,7),
-  sumber_data TEXT NOT NULL DEFAULT 'manual',
-  terakhir_sinkron TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -69,9 +63,4 @@ ALTER TABLE events ALTER COLUMN lokasi DROP NOT NULL;
 -- ---------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_venues_type_id ON venues(venue_type_id);
 CREATE INDEX IF NOT EXISTS idx_venues_kota ON venues(kota);
-CREATE INDEX IF NOT EXISTS idx_venues_google_place_id ON venues(google_place_id);
 CREATE INDEX IF NOT EXISTS idx_events_venue_id ON events(venue_id);
-
--- Index trigram agar search ILIKE (nama/alamat/kota) tetap cepat saat data banyak
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE INDEX IF NOT EXISTS idx_venues_search_trgm ON venues USING gin (nama_venue gin_trgm_ops, alamat gin_trgm_ops, kota gin_trgm_ops);

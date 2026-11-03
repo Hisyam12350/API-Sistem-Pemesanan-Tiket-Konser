@@ -42,7 +42,7 @@ CREATE TABLE venue_types (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Daftar tempat konser (+ kolom integrasi Google Maps)
+-- Daftar tempat konser (alamat diisi manual)
 CREATE TABLE venues (
   id BIGSERIAL PRIMARY KEY,
   venue_type_id INT8 NOT NULL REFERENCES venue_types(id) ON DELETE RESTRICT,
@@ -51,11 +51,6 @@ CREATE TABLE venues (
   kota TEXT,
   kapasitas INT,
   gambar_url TEXT,
-  google_place_id TEXT UNIQUE,
-  latitude NUMERIC(10,7),
-  longitude NUMERIC(10,7),
-  sumber_data TEXT NOT NULL DEFAULT 'manual',
-  terakhir_sinkron TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

@@ -11,7 +11,7 @@ Backend REST API untuk sistem **pemesanan tiket konser** — dibangun dengan **N
 - **Autentikasi & Otorisasi** — Register, Login (JWT), dan profil user.
 - **Multi-Role** — `SuperAdmin`, `Admin`, `Customer`, `Scanner` dengan kontrol akses per endpoint.
 - **Manajemen Event** — CRUD event + upload banner ke Supabase Storage + relasi venue (Step 1–2: pilih tempat lalu isi detail).
-- **Venue & Google Maps** — Master tipe tempat (Stadion/Indoor/Outdoor/Lapangan), daftar venue dengan filter kategori + search + pagination, pencarian via Google Places & simpan otomatis beserta klasifikasi tipe.
+- **Venue & Tempat Event** — Master tipe tempat (Stadion/Indoor/Outdoor/Lapangan), daftar venue dengan filter kategori + search + pagination, input alamat secara manual oleh admin.
 - **Kategori Tiket** — CRUD kategori tiket per event (harga, kuota) dengan tracking kuota otomatis.
 - **Kursi & Seat Locking** — Generate kursi massal per kategori, lock kursi sementara (anti rebutan), dan unlock.
 - **Keamanan** — Password di-hash dengan bcrypt, token JWT, validasi input, API key Google hanya di backend.
@@ -187,10 +187,8 @@ Base URL: `/api`
 | Method | Endpoint | Akses | Keterangan |
 |---|---|---|---|
 | GET | `/api/venues?venue_type_id=&search=&kota=&page=&limit=` | Publik | Daftar venue: filter kategori + search nama/alamat/kota + pagination |
-| GET | `/api/venues/:id` | Publik | Detail venue (nama + alamat + koordinat) |
-| POST | `/api/venues/cari-google` | Login | Proxy Google Places Autocomplete. Body: `{ input, session_token }` (1 token per sesi ketik) |
-| POST | `/api/venues/simpan-dari-google` | Admin/SuperAdmin | Simpan venue dari Google. Body: `{ place_id, venue_type_id? }` — klasifikasi otomatis, fallback 422 bila ambigu |
-| POST | `/api/venues` | Admin/SuperAdmin | Buat venue manual |
+| GET | `/api/venues/:id` | Publik | Detail venue (nama + alamat + kota) |
+| POST | `/api/venues` | Admin/SuperAdmin | Buat venue manual (input nama, alamat, kota, kapasitas) |
 | PUT | `/api/venues/:id` | Admin/SuperAdmin | Update venue |
 | DELETE | `/api/venues/:id` | Admin/SuperAdmin | Hapus venue (ditolak 409 bila masih dipakai event) |
 
@@ -270,8 +268,6 @@ API/
 │   └── venueRoutes.js             # GET/POST/PUT/DELETE /api/venues + cari-google & simpan-dari-google
 ├── utils/                         # Utilitas & helper
 │   ├── storageService.js          # Upload/hapus file ke Supabase Storage
-│   ├── venueClassifier.js         # Klasifikasi otomatis venue Google ke venue_types
-│   └── googlePlacesService.js     # Proxy Google Places API (autocomplete + place details)
 ├── app.js                         # Entry point aplikasi
 └── package.json
 ```
