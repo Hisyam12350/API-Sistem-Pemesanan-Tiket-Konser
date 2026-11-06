@@ -14,11 +14,11 @@ Backend REST API untuk sistem **pemesanan tiket konser** — dibangun dengan **N
 - **Venue & Tempat Event** — Master tipe tempat (Stadion/Indoor/Outdoor/Lapangan), daftar venue dengan filter kategori + search + pagination, input alamat secara manual oleh admin.
 - **Kategori Tiket** — CRUD kategori tiket per event (harga, kuota) dengan tracking kuota otomatis.
 - **Kursi & Seat Locking** — Generate kursi massal per kategori, lock kursi sementara (anti rebutan), dan unlock.
+- **Orders / Checkout** — Buat order dari kursi terkunci, batalkan order pending, dan tandai paid (manual).
 - **Keamanan** — Password di-hash dengan bcrypt, token JWT, validasi input.
 
 ### 🚧 Sedang Dikembangkan (Roadmap)
-- Orders / Checkout (dengan batas waktu bayar 15 menit)
-- Payments (integrasi & konfirmasi pembayaran)
+- Payments (integrasi gateway — saat ini pay manual tersedia)
 - E-Ticket + QR Code
 - Check-in / Scan tiket (role Scanner)
 
@@ -113,8 +113,9 @@ npm install
 1. Buka proyek Supabase Anda → **SQL Editor**.
 2. Jalankan isi file `config/schema.sql` untuk membuat seluruh tabel, enum, dan trigger.
 3. Jika sudah pernah setup sebelumnya, jalankan migration terbaru secara berurutan:
-   `config/migrations/001_add_order_item_seats.sql` lalu
-   `config/migrations/002_venues_google_places.sql`
+    `config/migrations/001_add_order_item_seats.sql` lalu
+    `config/migrations/002_venues_google_places.sql` lalu
+    `config/migrations/003_add_locked_by_to_seats.sql`
 
 ### 3. Konfigurasi Environment
 Salin contoh berikut ke file `.env` di root proyek, lalu isi dengan kredensial Supabase Anda:
@@ -219,6 +220,17 @@ Base URL: `/api`
 
 > **Catatan Seat Locking:** Penguncian bersifat **atomik** — jika salah satu kursi sudah di-lock/dibooking user lain, seluruh permintaan lock dibatalkan (tidak ada kursi yang tertahan). Update terkondisi `status='available'` mencegah dua user merebut kursi yang sama.
 
+### 🛒 Orders / Checkout
+| Method | Endpoint | Akses | Keterangan |
+|---|---|---|---|
+| POST | `/api/orders` | Customer/Admin/SuperAdmin | Buat order dari kursi terkunci. Body: `{ seat_ids: [..] }` |
+| GET | `/api/orders` | Customer/Admin/SuperAdmin | Daftar order (Customer: milik sendiri; Admin/SuperAdmin: semua) |
+| GET | `/api/orders/:id` | Customer/Admin/SuperAdmin | Detail order + items + seats |
+| POST | `/api/orders/:id/cancel` | Customer/Admin/SuperAdmin | Batalkan order pending (kuota & kursi dipulihkan) |
+| POST | `/api/orders/:id/pay` | Customer/Admin/SuperAdmin | Tandai order sebagai paid (manual) |
+
+> **Catatan Orders:** `batas_waktu_bayar = NOW() + 15 menit`. Kursi tetap `locked` setelah checkout; trigger DB membebaskan kursi pada `expired`/`cancelled`; `pay` mengubah kursi menjadi `booked`. Kolom `cutsomer_id` (typo) dipakai literal sesuai schema.
+
 ### 🔑 Cara Autentikasi
 Endpoint bertanda **Login/Admin/SuperAdmin** memerlukan header:
 ```
@@ -244,7 +256,8 @@ API/
 │   ├── schema.sql                 # Skema database lengkap (tabel, enum, trigger, index)
 │   ├── migrations/                # File migrasi bertahap
 │   │   ├── 001_add_order_item_seats.sql
-│   │   └── 002_venues_google_places.sql
+│   │   ├── 002_venues_google_places.sql
+│   │   └── 003_add_locked_by_to_seats.sql
 │   ├── supabase.js                # Inisialisasi Supabase client
 │   ├── db.js                      # PostgreSQL connection pool (pg)
 │   └── jwt.js                     # Sumber tunggal konfigurasi JWT
@@ -254,6 +267,7 @@ API/
 │   ├── eventsController.js
 │   ├── ticketCategoriesController.js
 │   ├── seatsController.js
+│   ├── ordersController.js
 │   ├── venueTypesController.js    # CRUD master tipe tempat (Stadion, Indoor, Outdoor, Lapangan)
 │   ├── venuesController.js        # CRUD venue + upload gambar
 │   ├── genresController.js        # CRUD master genre musik
@@ -265,6 +279,7 @@ API/
 │   ├── events.js
 │   ├── ticketCategories.js
 │   ├── seats.js
+│   ├── orders.js
 │   ├── venueTypes.js              # Model tabel venue_types
 │   ├── venues.js                  # Model tabel venues
 │   └── genres.js                  # Model tabel genres
@@ -274,6 +289,7 @@ API/
 │   ├── eventRoutes.js
 │   ├── ticketCategoryRoutes.js
 │   ├── seatRoutes.js
+│   ├── orderRoutes.js
 │   ├── venueTypeRoutes.js         # GET/POST/DELETE /api/venue-types
 │   └── venueRoutes.js             # GET/POST/PUT/DELETE /api/venues
 │   ├── genreRoutes.js             # GET/POST/PUT/DELETE /api/genres
@@ -314,7 +330,7 @@ curl -X POST http://localhost:5000/api/ticket-categories \
 ## ⚠️ Catatan Penting
 
 - **`JWT_SECRET` wajib diset** di `.env`. Fallback default hanya untuk development — jangan dipakai di produksi.
-- Jalankan **migration terbaru secara berurutan** (`001_add_order_item_seats.sql` lalu `002_venues_google_places.sql`) agar tabel `order_item_seats`, `venue_types`, `venues`, dan trigger terbaru tersedia.
+- Jalankan **migration terbaru secara berurutan** (`001_add_order_item_seats.sql`, `002_venues_google_places.sql`, `003_add_locked_by_to_seats.sql`) agar tabel `order_item_seats`, `venue_types`, `venues`, `locked_by`, dan trigger terbaru tersedia.
 - **Jangan commit file `.env`** ke repository (pastikan sudah masuk `.gitignore`).
 - Kolom `orders` menggunakan nama `cutsomer_id` (sesuai skema Supabase yang ada) — perhatikan saat query.
 
@@ -328,18 +344,3 @@ Proyek ini dibuat untuk keperluan pembelajaran/UKK.
 
 
 
-## Orders / Checkout (baru)
-
-Endpoint:
-
-- POST /api/orders — buat order dari kursi terkunci. Body: { seat_ids: [..] }
-- GET /api/orders — daftar order (Customer: milik sendiri; Admin/SuperAdmin: semua)
-- GET /api/orders/:id — detail order + items + seats
-- POST /api/orders/:id/cancel — batalkan order pending
-- POST /api/orders/:id/pay — tandai order sebagai paid (manual)
-
-Catatan:
-
-- batas_waktu_bayar = NOW() + 15 menit.
-- Kursi tetap locked setelah checkout; trigger DB membebaskan pada expired/cancelled; pay mengubah kursi menjadi booked.
-- Kolom cutsomer_id (typo) dipakai literal sesuai schema.
