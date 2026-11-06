@@ -1,5 +1,6 @@
 const Venue = require('../models/venues.js');
 const VenueType = require('../models/venueTypes.js');
+const storageService = require('../utils/storageService');
 
 function toStatusCode(error, fallback = 500) {
   return Number.isInteger(error.statusCode) ? error.statusCode : fallback;
@@ -31,13 +32,22 @@ const venuesController = {
 
   createVenue: async (req, res) => {
     try {
-      const { venue_type_id, nama_venue, alamat, kota, kapasitas, gambar_url } = req.body;
+      const body = req.body || {};
+      const { venue_type_id, nama_venue, alamat, kota, kapasitas } = body;
+      let gambar_url = null;
+
       if (!venue_type_id || !nama_venue || !alamat) {
         return res.status(400).json({ success: false, message: 'venue_type_id, nama_venue, dan alamat wajib diisi.' });
       }
       if (kapasitas !== undefined && kapasitas !== null && (isNaN(Number(kapasitas)) || Number(kapasitas) <= 0)) {
         return res.status(400).json({ success: false, message: 'kapasitas harus berupa angka lebih besar dari 0.' });
       }
+
+      // Upload gambar ke Supabase Storage jika ada file yang diunggah
+      if (req.file) {
+        gambar_url = await storageService.uploadFile(req.file, 'venues', 'venues');
+      }
+
       const tipe = await VenueType.getTypeById(venue_type_id);
       if (!tipe) {
         return res.status(404).json({ success: false, message: 'Tipe tempat dengan ID ' + venue_type_id + ' tidak ditemukan.' });
@@ -52,7 +62,9 @@ const venuesController = {
   updateVenue: async (req, res) => {
     try {
       const { id } = req.params;
-      const { venue_type_id, nama_venue, alamat, kota, kapasitas, gambar_url } = req.body;
+      const body = req.body || {};
+      const { venue_type_id, nama_venue, alamat, kota, kapasitas } = body;
+      let gambar_url = null;
       const existing = await Venue.getVenueById(id);
       if (!existing) {
         return res.status(404).json({ success: false, message: 'Tempat dengan ID ' + id + ' tidak ditemukan.' });
@@ -66,6 +78,17 @@ const venuesController = {
       if (kapasitas !== undefined && kapasitas !== null && (isNaN(Number(kapasitas)) || Number(kapasitas) <= 0)) {
         return res.status(400).json({ success: false, message: 'kapasitas harus berupa angka lebih besar dari 0.' });
       }
+
+      // Upload gambar baru atau hapus gambar lama jika ada file baru
+      if (req.file) {
+        if (existing.gambar_url) {
+          await storageService.deleteFile(existing.gambar_url, 'venues');
+        }
+        gambar_url = await storageService.uploadFile(req.file, 'venues', 'venues');
+      } else {
+        gambar_url = existing.gambar_url;
+      }
+
       const result = await Venue.updateVenue(id, { venue_type_id, nama_venue, alamat, kota, kapasitas, gambar_url });
       res.status(200).json({ success: true, message: 'Tempat berhasil diperbarui', data: result });
     } catch (error) {
@@ -90,7 +113,5 @@ const venuesController = {
     }
   },
 };
-
-module.exports = venuesController;
 
 module.exports = venuesController;

@@ -43,9 +43,28 @@ const authController = {
         role: assignedRole
       });
 
+      // Generate JWT token (same as login)
+      const payload = {
+        id: newUser.id,
+        email: newUser.email,
+        role: newUser.role
+      };
+
+      const secretKey = JWT_SECRET;
+      const expiresIn = JWT_EXPIRES_IN;
+
+      const token = jwt.sign(payload, secretKey, { expiresIn });
+
       return res.status(201).json({
         success: true,
         message: 'Registrasi berhasil.',
+        token,
+        user: {
+          id: newUser.id,
+          username: newUser.username,
+          email: newUser.email,
+          role: newUser.role
+        },
         data: newUser
       });
     } catch (error) {
