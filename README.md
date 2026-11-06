@@ -14,7 +14,7 @@ Backend REST API untuk sistem **pemesanan tiket konser** — dibangun dengan **N
 - **Venue & Tempat Event** — Master tipe tempat (Stadion/Indoor/Outdoor/Lapangan), daftar venue dengan filter kategori + search + pagination, input alamat secara manual oleh admin.
 - **Kategori Tiket** — CRUD kategori tiket per event (harga, kuota) dengan tracking kuota otomatis.
 - **Kursi & Seat Locking** — Generate kursi massal per kategori, lock kursi sementara (anti rebutan), dan unlock.
-- **Keamanan** — Password di-hash dengan bcrypt, token JWT, validasi input, API key Google hanya di backend.
+- **Keamanan** — Password di-hash dengan bcrypt, token JWT, validasi input.
 
 ### 🚧 Sedang Dikembangkan (Roadmap)
 - Orders / Checkout (dengan batas waktu bayar 15 menit)
@@ -135,9 +135,6 @@ DATABASE_URL=postgresql://user:password@host:5432/postgres
 # Port server (opsional, default 5000)
 PORT=5000
 
-# Google Maps (Places API New) — WAJIB untuk /api/venues/cari-google & /api/venues/simpan-dari-google
-# Tanpa ini kedua endpoint mengembalikan 503 (endpoint lain tetap jalan)
-GOOGLE_MAPS_API_KEY=isi_dengan_api_key_google_maps_anda
 ```
 
 ### 4. Jalankan Server
@@ -329,3 +326,20 @@ Proyek ini dibuat untuk keperluan pembelajaran/UKK.
 
 
 
+
+
+## Orders / Checkout (baru)
+
+Endpoint:
+
+- POST /api/orders — buat order dari kursi terkunci. Body: { seat_ids: [..] }
+- GET /api/orders — daftar order (Customer: milik sendiri; Admin/SuperAdmin: semua)
+- GET /api/orders/:id — detail order + items + seats
+- POST /api/orders/:id/cancel — batalkan order pending
+- POST /api/orders/:id/pay — tandai order sebagai paid (manual)
+
+Catatan:
+
+- batas_waktu_bayar = NOW() + 15 menit.
+- Kursi tetap locked setelah checkout; trigger DB membebaskan pada expired/cancelled; pay mengubah kursi menjadi booked.
+- Kolom cutsomer_id (typo) dipakai literal sesuai schema.

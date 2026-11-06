@@ -270,7 +270,6 @@ ON CONFLICT (nama_tipe) DO NOTHING;
 -- Index venue: filter kategori + search + join
 CREATE INDEX IF NOT EXISTS idx_venues_type_id ON venues(venue_type_id);
 CREATE INDEX IF NOT EXISTS idx_venues_kota ON venues(kota);
-CREATE INDEX IF NOT EXISTS idx_venues_google_place_id ON venues(google_place_id);
 CREATE INDEX IF NOT EXISTS idx_events_venue_id ON events(venue_id);
 
 -- Index trigram agar search ILIKE tetap cepat saat data banyak

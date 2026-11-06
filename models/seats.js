@@ -1,10 +1,8 @@
 const supabase = require('../config/supabase.js');
 
-// Kolom yang aman dikembalikan ke klien
-const SELECT_COLUMNS = 'id, kategori_id, nomor_kursi, status_kursi, locked_until, created_at';
+const SELECT_COLUMNS = 'id, kategori_id, nomor_kursi, status_kursi, locked_until, locked_by, created_at';
 
 const Seat = {
-  // Ambil semua kursi untuk satu kategori, diurutkan berdasarkan nomor kursi.
   async getSeatsByCategory(kategoriId) {
     const { data, error } = await supabase
       .from('seats')
@@ -16,7 +14,6 @@ const Seat = {
     return data;
   },
 
-  // Ambil satu kursi berdasarkan ID
   async getSeatById(id) {
     const { data, error } = await supabase
       .from('seats')
@@ -28,7 +25,6 @@ const Seat = {
     return data;
   },
 
-  // Ambil daftar nomor kursi yang sudah ada di sebuah kategori (untuk cek duplikat)
   async getSeatNumbersByCategory(kategoriId) {
     const { data, error } = await supabase
       .from('seats')
@@ -39,7 +35,6 @@ const Seat = {
     return data.map((row) => row.nomor_kursi);
   },
 
-  // Insert banyak kursi sekaligus (batch)
   async generateSeats(kategoriId, seatNumbers) {
     const rows = seatNumbers.map((nomor) => ({ kategori_id: kategoriId, nomor_kursi: nomor }));
     const { data, error } = await supabase
@@ -52,35 +47,33 @@ const Seat = {
     return data;
   },
 
-  // Lock satu kursi secara ATOMIK.
-  // UPDATE ... WHERE id = ? AND status_kursi = 'available'
-  // Jika kursi sudah 'locked'/'booked', tidak ada baris yang ter-update -> data null.
-  // Ini mencegah 2 user merebut kursi yang sama (aman dari race condition di level DB).
-  async lockSeat(seatId, lockedUntil) {
+  async lockSeat(seatId, lockedUntil, lockedBy = null) {
     const { data, error } = await supabase
       .from('seats')
-      .update({ status_kursi: 'locked', locked_until: lockedUntil })
+      .update({ status_kursi: 'locked', locked_until: lockedUntil, locked_by: lockedBy })
       .eq('id', seatId)
       .eq('status_kursi', 'available')
       .select(SELECT_COLUMNS)
       .maybeSingle();
 
     if (error) throw error;
-    return data; // null jika gagal lock (sudah tidak available)
+    return data;
   },
 
-  // Buka lock satu kursi (hanya jika statusnya 'locked').
-  async unlockSeat(seatId) {
-    const { data, error } = await supabase
+  async unlockSeat(seatId, userId = null) {
+    let query = supabase
       .from('seats')
-      .update({ status_kursi: 'available', locked_until: null })
+      .update({ status_kursi: 'available', locked_until: null, locked_by: null })
       .eq('id', seatId)
-      .eq('status_kursi', 'locked')
-      .select(SELECT_COLUMNS)
-      .maybeSingle();
+      .eq('status_kursi', 'locked');
 
+    if (userId !== null && userId !== undefined) {
+      query = query.eq('locked_by', userId);
+    }
+
+    const { data, error } = await query.select(SELECT_COLUMNS).maybeSingle();
     if (error) throw error;
-    return data; // null jika bukan 'locked'
+    return data;
   }
 };
 

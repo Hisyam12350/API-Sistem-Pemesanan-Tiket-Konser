@@ -384,3 +384,39 @@ Akses dari emulator: http://10.0.2.2:5000
 ---
 
 > **Catatan:** Semua endpoint yang memerlukan `Authorization` harus disertakan header `Authorization: Bearer <token>`. Token didapatkan dari `POST /api/auth/login` setelah register atau login berhasil.
+
+## 7. FLOW ORDERS / CHECKOUT (BARU)
+
+### 7.1 Buat Order
+Pastikan customer sudah lock kursi (lihat 3.5), lalu:
+```bash
+curl -X POST http://localhost:5000/api/orders \
+  -H "Authorization: Bearer <TOKEN_CUSTOMER>" \
+  -H "Content-Type: application/json" \
+  -d '{"seat_ids":[1,2,3]}'
+```
+
+### 7.2 List & Detail
+```bash
+curl -X GET http://localhost:5000/api/orders -H "Authorization: Bearer <TOKEN_CUSTOMER>"
+curl -X GET http://localhost:5000/api/orders/1 -H "Authorization: Bearer <TOKEN_CUSTOMER>"
+```
+
+### 7.3 Batalkan Order Pending
+```bash
+curl -X POST http://localhost:5000/api/orders/1/cancel -H "Authorization: Bearer <TOKEN_CUSTOMER>"
+```
+
+### 7.4 Bayar Order (manual)
+```bash
+curl -X POST http://localhost:5000/api/orders/1/pay -H "Authorization: Bearer <TOKEN_CUSTOMER>"
+```
+
+### 7.5 Error Scenarios
+- seat_ids kosong -> 400
+- kursi tidak locked / bukan milik user -> 409
+- kursi tidak ditemukan -> 409
+- order tidak ditemukan -> 404
+- akses order orang lain -> 403
+- cancel/pay non-pending -> 409
+- Scanner -> 403

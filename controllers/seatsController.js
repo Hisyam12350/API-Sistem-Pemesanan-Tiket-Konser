@@ -110,7 +110,7 @@ const seatsController = {
 
       // Lock satu per satu secara atomik (tiap UPDATE sudah terkondisi status='available')
       for (const seatId of seat_ids) {
-        const locked = await Seat.lockSeat(seatId, lockedUntil);
+        const locked = await Seat.lockSeat(seatId, lockedUntil, req.user.id);
         if (locked) {
           lockedSeats.push(locked);
         } else {
@@ -153,8 +153,11 @@ const seatsController = {
       const unlockedSeats = [];
       const skippedSeats = [];
 
+      const isAdmin = req.user && (req.user.role === 'Admin' || req.user.role === 'SuperAdmin');
+      const unlockUserId = isAdmin ? null : req.user.id;
+
       for (const seatId of seat_ids) {
-        const unlocked = await Seat.unlockSeat(seatId);
+        const unlocked = await Seat.unlockSeat(seatId, unlockUserId);
         if (unlocked) {
           unlockedSeats.push(unlocked);
         } else {
