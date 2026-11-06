@@ -44,9 +44,10 @@ Backend REST API untuk sistem **pemesanan tiket konser** — dibangun dengan **N
 | Tabel | Keterangan |
 |---|---|
 | `users` | Data pengguna & role |
-| `events` | Data event/konser (+ `venue_id`, `deskripsi`, `detail_lokasi`) |
+| `events` | Data event/konser (+ `venue_id`, `genre_id`, `deskripsi`, `detail_lokasi`) |
 | `venue_types` | Master tipe tempat (Stadion, Indoor, Outdoor, Lapangan) |
-| `venues` | Daftar tempat (+ kolom Google: `google_place_id`, koordinat, `sumber_data`) |
+| `venues` | Daftar tempat (alamat diisi manual) |
+| `genres` | Master genre musik (Rock, Pop, Jazz, Dangdut, dll.) |
 | `ticket_categories` | Kategori tiket per event (VIP, Festival, dll) + kuota |
 | `seats` | Kursi per kategori + status & waktu lock |
 | `orders` | Pesanan (status, total, batas waktu bayar) |
@@ -72,6 +73,7 @@ erDiagram
     users ||--o{ orders : "memesan"
     venue_types ||--o{ venues : "mengkategorikan"
     venues ||--o{ events : "menjadi lokasi"
+    genres ||--o{ events : "mengklasifikasikan"
     events ||--o{ ticket_categories : "memiliki"
     ticket_categories ||--o{ seats : "memiliki"
     orders ||--o{ order_items : "berisi"
@@ -188,9 +190,18 @@ Base URL: `/api`
 |---|---|---|---|
 | GET | `/api/venues?venue_type_id=&search=&kota=&page=&limit=` | Publik | Daftar venue: filter kategori + search nama/alamat/kota + pagination |
 | GET | `/api/venues/:id` | Publik | Detail venue (nama + alamat + kota) |
-| POST | `/api/venues` | Admin/SuperAdmin | Buat venue manual (input nama, alamat, kota, kapasitas) |
+| POST | `/api/venues` | Admin/SuperAdmin | Buat venue manual (input nama, alamat, kota, kapasitas + upload gambar) |
 | PUT | `/api/venues/:id` | Admin/SuperAdmin | Update venue |
 | DELETE | `/api/venues/:id` | Admin/SuperAdmin | Hapus venue (ditolak 409 bila masih dipakai event) |
+
+### 🎵 Genres (Genre Musik)
+| Method | Endpoint | Akses | Keterangan |
+|---|---|---|---|
+| GET | `/api/genres` | Publik | Daftar genre musik (Rock, Pop, Jazz, Dangdut, dll.) |
+| GET | `/api/genres/:id` | Publik | Detail genre |
+| POST | `/api/genres` | Admin/SuperAdmin | Buat genre baru |
+| PUT | `/api/genres/:id` | Admin/SuperAdmin | Update genre |
+| DELETE | `/api/genres/:id` | Admin/SuperAdmin | Hapus genre (ditolak 409 bila masih dipakai event) |
 
 ### 🎟️ Ticket Categories
 | Method | Endpoint | Akses | Keterangan |
@@ -247,7 +258,8 @@ API/
 │   ├── ticketCategoriesController.js
 │   ├── seatsController.js
 │   ├── venueTypesController.js    # CRUD master tipe tempat (Stadion, Indoor, Outdoor, Lapangan)
-│   └── venuesController.js        # CRUD venue + proxy Google Places (cari-google, simpan-dari-google)
+│   ├── venuesController.js        # CRUD venue + upload gambar
+│   ├── genresController.js        # CRUD master genre musik
 ├── middleware/
 │   ├── authMiddleware.js          # verifyToken & authorizeRoles
 │   └── uploadMiddleware.js        # Konfigurasi multer (upload gambar)
@@ -257,7 +269,8 @@ API/
 │   ├── ticketCategories.js
 │   ├── seats.js
 │   ├── venueTypes.js              # Model tabel venue_types
-│   └── venues.js                  # Model tabel venues
+│   ├── venues.js                  # Model tabel venues
+│   └── genres.js                  # Model tabel genres
 ├── routes/                        # Definisi endpoint per resource
 │   ├── authRoutes.js
 │   ├── userRoutes.js
@@ -265,7 +278,8 @@ API/
 │   ├── ticketCategoryRoutes.js
 │   ├── seatRoutes.js
 │   ├── venueTypeRoutes.js         # GET/POST/DELETE /api/venue-types
-│   └── venueRoutes.js             # GET/POST/PUT/DELETE /api/venues + cari-google & simpan-dari-google
+│   └── venueRoutes.js             # GET/POST/PUT/DELETE /api/venues
+│   ├── genreRoutes.js             # GET/POST/PUT/DELETE /api/genres
 ├── utils/                         # Utilitas & helper
 │   ├── storageService.js          # Upload/hapus file ke Supabase Storage
 ├── app.js                         # Entry point aplikasi

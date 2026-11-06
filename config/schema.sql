@@ -1,5 +1,5 @@
 -- 1. Hapus jika ada yang lama
-DROP TABLE IF EXISTS tickets, payments, order_item_seats, order_items, orders, seats, ticket_categories, events, venue_types, venues, users CASCADE;
+DROP TABLE IF EXISTS tickets, payments, order_item_seats, order_items, orders, seats, ticket_categories, events, venue_types, venues, genres, users CASCADE;
 DROP TYPE IF EXISTS Role, event_status, order_status, payment_status, ticket_status, seat_status CASCADE;
 
 -- 2. Buat Tipe Enum
@@ -28,6 +28,7 @@ CREATE TABLE events (
   banner_url TEXT,
   status event_status DEFAULT 'upcoming',
   venue_id INT8 REFERENCES venues(id) ON DELETE RESTRICT,
+  genre_id INT8 REFERENCES genres(id) ON DELETE SET NULL,
   deskripsi TEXT,
   detail_lokasi TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
@@ -41,6 +42,26 @@ CREATE TABLE venue_types (
   ikon TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Master genre musik konser
+CREATE TABLE genres (
+  id BIGSERIAL PRIMARY KEY,
+  nama_genre TEXT UNIQUE NOT NULL,
+  deskripsi TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Seed genre dasar
+INSERT INTO genres (nama_genre, deskripsi) VALUES
+  ('Rock', 'Musik rock dan varian'),
+  ('Pop', 'Musik pop kontemporer'),
+  ('Jazz', 'Musik jazz dan fusinya'),
+  ('Klasik', 'Musik klasik dan orkestra'),
+  ('Dangdut', 'Musik dangdut Indonesia'),
+  ('Hip Hop', 'Musik hip hop dan rap'),
+  ('EDM', 'Musik elektronik dan EDM'),
+  ('R&B', 'Musik rhythm and blues')
+ON CONFLICT (nama_genre) DO NOTHING;
 
 -- Daftar tempat konser (alamat diisi manual)
 CREATE TABLE venues (

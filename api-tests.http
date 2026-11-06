@@ -67,7 +67,7 @@ Content-Type: application/json
 GET http://localhost:5000/api/venues?kota=Jakarta&page=1&limit=10
 
 ### Create venue
-POST http://localhost:5000/api/venues
+POST  
 Authorization: Bearer {{token}}
 Content-Type: application/json
 

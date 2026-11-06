@@ -9,6 +9,7 @@ const ticketCategoryRoutes = require('./routes/ticketCategoryRoutes');
 const seatRoutes = require('./routes/seatRoutes');
 const venueTypeRoutes = require('./routes/venueTypeRoutes');
 const venueRoutes = require('./routes/venueRoutes');
+const genreRoutes = require('./routes/genreRoutes');
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -35,6 +36,7 @@ app.use('/api/ticket-categories', ticketCategoryRoutes);
 app.use('/api/seats', seatRoutes);
 app.use('/api/venue-types', venueTypeRoutes);
 app.use('/api/venues', venueRoutes);
+app.use('/api/genres', genreRoutes);
 
 // Handling Route 404 (Not Found)
 app.use((req, res) => {

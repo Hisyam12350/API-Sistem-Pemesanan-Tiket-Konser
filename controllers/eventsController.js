@@ -28,7 +28,7 @@ const eventController = {
 
   createEvents: async (req, res) => {
     try {
-      const { nama_event, lokasi, waktu_event, status, venue_id, deskripsi, detail_lokasi } = req.body;
+      const { nama_event, lokasi, waktu_event, status, venue_id, genre_id, deskripsi, detail_lokasi } = req.body;
       let banner_url = req.body.banner_url || null;
 
       if (!nama_event || !waktu_event) {
@@ -67,7 +67,19 @@ const eventController = {
         banner_url = await storageService.uploadFile(req.file, 'events', 'banners');
       }
 
-      const result = await Event.createEvents({ nama_event, lokasi: finalLokasi, waktu_event, banner_url, status, venue_id: venue_id || null, deskripsi, detail_lokasi });
+      // Validasi genre jika diberikan
+      if (genre_id !== undefined && genre_id !== null && genre_id !== '') {
+        const Genre = require('../models/genres.js');
+        const genre = await Genre.getGenreById(genre_id);
+        if (!genre) {
+          return res.status(404).json({
+            success: false,
+            message: 'Genre dengan ID ' + genre_id + ' tidak ditemukan.'
+          });
+        }
+      }
+
+      const result = await Event.createEvents({ nama_event, lokasi: finalLokasi, waktu_event, banner_url, status, venue_id: venue_id || null, genre_id: genre_id || null, deskripsi, detail_lokasi });
       res.status(201).json({ success: true, message: "Event berhasil dibuat", data: result });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });
@@ -77,7 +89,7 @@ const eventController = {
   updateEvents: async (req, res) => {
     try {
       const { id } = req.params;
-      const { nama_event, lokasi, waktu_event, status, venue_id, deskripsi, detail_lokasi } = req.body;
+      const { nama_event, lokasi, waktu_event, status, venue_id, genre_id, deskripsi, detail_lokasi } = req.body;
 
       const existing = await Event.getEventById(id);
       if (!existing) {
@@ -122,7 +134,19 @@ const eventController = {
         }
       }
 
-      const result = await Event.updateEvents(id, { nama_event, lokasi: finalLokasi, waktu_event, banner_url, status, venue_id: finalVenueId, deskripsi, detail_lokasi });
+      // Validasi genre jika diberikan
+      if (genre_id !== undefined && genre_id !== null && genre_id !== '') {
+        const Genre = require('../models/genres.js');
+        const genre = await Genre.getGenreById(genre_id);
+        if (!genre) {
+          return res.status(404).json({
+            success: false,
+            message: 'Genre dengan ID ' + genre_id + ' tidak ditemukan.'
+          });
+        }
+      }
+
+      const result = await Event.updateEvents(id, { nama_event, lokasi: finalLokasi, waktu_event, banner_url, status, venue_id: finalVenueId, genre_id: genre_id || null, deskripsi, detail_lokasi });
       res.status(200).json({ success: true, message: "Event berhasil diperbarui", data: result });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });

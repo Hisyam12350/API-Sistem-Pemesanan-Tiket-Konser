@@ -59,8 +59,31 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS detail_lokasi TEXT;
 ALTER TABLE events ALTER COLUMN lokasi DROP NOT NULL;
 
 -- ---------------------------------------------------------------------
--- 4. Index performa (filter kategori + search + join venue)
+-- 4. Tabel master: genres (genre musik konser)
 -- ---------------------------------------------------------------------
-CREATE INDEX IF NOT EXISTS idx_venues_type_id ON venues(venue_type_id);
-CREATE INDEX IF NOT EXISTS idx_venues_kota ON venues(kota);
-CREATE INDEX IF NOT EXISTS idx_events_venue_id ON events(venue_id);
+CREATE TABLE IF NOT EXISTS genres (
+  id BIGSERIAL PRIMARY KEY,
+  nama_genre TEXT UNIQUE NOT NULL,
+  deskripsi TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Seed genre dasar (idempotent)
+INSERT INTO genres (nama_genre, deskripsi) VALUES
+  ('Rock', 'Musik rock dan varian'),
+  ('Pop', 'Musik pop kontemporer'),
+  ('Jazz', 'Musik jazz dan fusinya'),
+  ('Klasik', 'Musik klasik dan orkestra'),
+  ('Dangdut', 'Musik dangdut Indonesia'),
+  ('Hip Hop', 'Musik hip hop dan rap'),
+  ('EDM', 'Musik elektronik dan EDM'),
+  ('R&B', 'Musik rhythm and blues')
+ON CONFLICT (nama_genre) DO NOTHING;
+
+-- ---------------------------------------------------------------------
+-- 5. Tambah genre_id di events (opsional -> aman untuk data lama)
+-- ---------------------------------------------------------------------
+ALTER TABLE events ADD COLUMN IF NOT EXISTS genre_id INT8 REFERENCES genres(id) ON DELETE SET NULL;
+
+-- Index untuk filter genre
+CREATE INDEX IF NOT EXISTS idx_events_genre_id ON events(genre_id);
