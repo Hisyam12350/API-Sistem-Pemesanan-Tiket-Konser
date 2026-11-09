@@ -55,15 +55,6 @@ const ordersController = {
     } catch (error) {
       mapError(error, res);
     }
-  },
-
-  payOrder: async (req, res) => {
-    try {
-      const result = await Order.payOrder(req.params.id, req.user.id, req.user.role);
-      res.status(200).json({ success: true, message: 'Order berhasil dibayar.', data: result });
-    } catch (error) {
-      mapError(error, res);
-    }
   }
 };
 

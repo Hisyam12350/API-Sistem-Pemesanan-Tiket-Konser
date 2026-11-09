@@ -14,11 +14,10 @@ Backend REST API untuk sistem **pemesanan tiket konser** — dibangun dengan **N
 - **Venue & Tempat Event** — Master tipe tempat (Stadion/Indoor/Outdoor/Lapangan), daftar venue dengan filter kategori + search + pagination, input alamat secara manual oleh admin.
 - **Kategori Tiket** — CRUD kategori tiket per event (harga, kuota) dengan tracking kuota otomatis.
 - **Kursi & Seat Locking** — Generate kursi massal per kategori, lock kursi sementara (anti rebutan), dan unlock.
-- **Orders / Checkout** — Buat order dari kursi terkunci, batalkan order pending, dan tandai paid (manual).
+- **Orders / Checkout** — Buat order dari kursi terkunci, batalkan order pending, pembayaran via **Midtrans Snap** (gateway).
 - **Keamanan** — Password di-hash dengan bcrypt, token JWT, validasi input.
 
 ### 🚧 Sedang Dikembangkan (Roadmap)
-- Payments (integrasi gateway — saat ini pay manual tersedia)
 - E-Ticket + QR Code
 - Check-in / Scan tiket (role Scanner)
 
@@ -113,9 +112,10 @@ npm install
 1. Buka proyek Supabase Anda → **SQL Editor**.
 2. Jalankan isi file `config/schema.sql` untuk membuat seluruh tabel, enum, dan trigger.
 3. Jika sudah pernah setup sebelumnya, jalankan migration terbaru secara berurutan:
-    `config/migrations/001_add_order_item_seats.sql` lalu
+`config/migrations/001_add_order_item_seats.sql` lalu
     `config/migrations/002_venues_google_places.sql` lalu
-    `config/migrations/003_add_locked_by_to_seats.sql`
+    `config/migrations/003_add_locked_by_to_seats.sql` lalu
+    `config/migrations/004_payments_midtrans.sql`
 
 ### 3. Konfigurasi Environment
 Salin contoh berikut ke file `.env` di root proyek, lalu isi dengan kredensial Supabase Anda:
@@ -136,6 +136,10 @@ DATABASE_URL=postgresql://user:password@host:5432/postgres
 # Port server (opsional, default 5000)
 PORT=5000
 
+# Midtrans Payment Gateway
+MIDTRANS_SERVER_KEY=SB-Mid-server-xxx
+MIDTRANS_CLIENT_KEY=Mid-client-xxx
+MIDTRANS_IS_PRODUCTION=false
 ```
 
 ### 4. Jalankan Server
@@ -227,9 +231,23 @@ Base URL: `/api`
 | GET | `/api/orders` | Customer/Admin/SuperAdmin | Daftar order (Customer: milik sendiri; Admin/SuperAdmin: semua) |
 | GET | `/api/orders/:id` | Customer/Admin/SuperAdmin | Detail order + items + seats |
 | POST | `/api/orders/:id/cancel` | Customer/Admin/SuperAdmin | Batalkan order pending (kuota & kursi dipulihkan) |
-| POST | `/api/orders/:id/pay` | Customer/Admin/SuperAdmin | Tandai order sebagai paid (manual) |
 
-> **Catatan Orders:** `batas_waktu_bayar = NOW() + 15 menit`. Kursi tetap `locked` setelah checkout; trigger DB membebaskan kursi pada `expired`/`cancelled`; `pay` mengubah kursi menjadi `booked`. Kolom `cutsomer_id` (typo) dipakai literal sesuai schema.
+> **Catatan Orders:** `batas_waktu_bayar = NOW() + 15 menit`. Kursi tetap `locked` setelah checkout; trigger DB membebaskan kursi pada `expired`/`cancelled`; pembayaran via gateway mengubah kursi menjadi `booked`. Kolom `cutsomer_id` (typo) dipakai literal sesuai schema.
+
+### 💳 Payment Gateway (Midtrans Snap)
+
+| Method | Endpoint | Akses | Keterangan |
+|---|---|---|---|
+| POST | `/api/payments/:orderId/create` | Customer/Admin/SuperAdmin | Buat transaksi Snap, kembalikan `snap_token` & `redirect_url` |
+| GET | `/api/payments/:orderId` | Customer/Admin/SuperAdmin | Status pembayaran + riwayat + tiket |
+| POST | `/api/payments/notification` | **Publik** (tanpa token) | Webhook Midtrans — signature SHA512, idempotent |
+
+> **Catatan Payment Gateway:**
+> - `snap_token` digunakan frontend untuk membuka halaman pembayaran Midtrans (Snap.js / redirect).
+> - Webhook **harus** dapat dijangkau dari internet (bukan localhost) saat production; gunakan tunneling (ngrok/localtunnel) saat development.
+> - Verifikasi signature: `SHA512(order_id + status_code + gross_amount + server_key)` — dicocokkan dengan `signature_key` dari Midtrans.
+> - Idempotent: webhook `settlement` yang dikirim ulang tidak menghasilkan tiket duplikat.
+> - Status Midtrans → internal: `capture/settlement` → `success`; `pending` → `pending`; `deny` → `failed`; `expire` → `expired`; `cancel/refund` → `failed`.
 
 ### 🔑 Cara Autentikasi
 Endpoint bertanda **Login/Admin/SuperAdmin** memerlukan header:
@@ -257,7 +275,8 @@ API/
 │   ├── migrations/                # File migrasi bertahap
 │   │   ├── 001_add_order_item_seats.sql
 │   │   ├── 002_venues_google_places.sql
-│   │   └── 003_add_locked_by_to_seats.sql
+│   │   ├── 003_add_locked_by_to_seats.sql
+│   │   └── 004_payments_midtrans.sql
 │   ├── supabase.js                # Inisialisasi Supabase client
 │   ├── db.js                      # PostgreSQL connection pool (pg)
 │   └── jwt.js                     # Sumber tunggal konfigurasi JWT

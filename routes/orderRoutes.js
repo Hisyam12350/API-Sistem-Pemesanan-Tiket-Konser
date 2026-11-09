@@ -31,11 +31,4 @@ router.post(
   ordersController.cancelOrder
 );
 
-router.post(
-  '/:id/pay',
-  verifyToken,
-  authorizeRoles('Customer', 'Admin', 'SuperAdmin'),
-  ordersController.payOrder
-);
-
 module.exports = router;

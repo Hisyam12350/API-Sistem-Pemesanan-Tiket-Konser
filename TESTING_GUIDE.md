@@ -199,7 +199,7 @@ Customer bertugas: melihat event, memilih venue, melihat kursi, lock kursi, dan 
 ```bash
 curl -X POST http://localhost:5000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"customer@mail.com","password":"rahasia123"}'
+  -d '{"email":"shasa@gmail.com","password":"customer123"}'
 ```
 
 Simpan token sebagai `<TOKEN_CUSTOMER>`.
@@ -385,9 +385,23 @@ Akses dari emulator: http://10.0.2.2:5000
 
 > **Catatan:** Semua endpoint yang memerlukan `Authorization` harus disertakan header `Authorization: Bearer <token>`. Token didapatkan dari `POST /api/auth/login` setelah register atau login berhasil.
 
-## 7. FLOW ORDERS / CHECKOUT (BARU)
+## 7. FLOW PAYMENT GATEWAY (MIDTRANS SNAP)
 
-### 7.1 Buat Order
+> **Catatan:** Endpoint manual `/api/orders/:id/pay` telah **dihapus**. Semua pembayaran kini melalui Midtrans Snap gateway.
+
+### 7.1 Prasyarat Midtrans Sandbox
+1. Daftar akun di [Midtrans Sandbox](https://app.sandbox.midtrans.com/register)
+2. Masuk ke **Settings → Access Keys**, salin **Server Key** (format: `SB-Mid-server-...`)
+3. Tambahkan ke `API/.env`:
+   ```env
+   MIDTRANS_SERVER_KEY=SB-Mid-server-xxx
+   MIDTRANS_CLIENT_KEY=Mid-client-xxx
+   MIDTRANS_IS_PRODUCTION=false
+   ```
+4. Jalankan migration `config/migrations/004_payments_midtrans.sql` di Supabase SQL Editor
+5. Restart server: `npm start`
+
+### 7.2 Buat Order (sebelumnya 7.1)
 Pastikan customer sudah lock kursi (lihat 3.5), lalu:
 ```bash
 curl -X POST http://localhost:5000/api/orders \
@@ -396,27 +410,157 @@ curl -X POST http://localhost:5000/api/orders \
   -d '{"seat_ids":[1,2,3]}'
 ```
 
-### 7.2 List & Detail
+### 7.3 List & Detail Order (sebelumnya 7.2)
 ```bash
 curl -X GET http://localhost:5000/api/orders -H "Authorization: Bearer <TOKEN_CUSTOMER>"
 curl -X GET http://localhost:5000/api/orders/1 -H "Authorization: Bearer <TOKEN_CUSTOMER>"
 ```
 
-### 7.3 Batalkan Order Pending
+### 7.4 Batalkan Order Pending (sebelumnya 7.3)
 ```bash
 curl -X POST http://localhost:5000/api/orders/1/cancel -H "Authorization: Bearer <TOKEN_CUSTOMER>"
 ```
 
-### 7.4 Bayar Order (manual)
+### 7.5 Buat Transaksi Pembayaran (Midtrans Snap)
+Gunakan `order_id` dari step 7.2:
 ```bash
-curl -X POST http://localhost:5000/api/orders/1/pay -H "Authorization: Bearer <TOKEN_CUSTOMER>"
+curl -X POST http://localhost:5000/api/payments/1/create \
+  -H "Authorization: Bearer <TOKEN_CUSTOMER>" \
+  -H "Content-Type: application/json" \
+  -d '{}'
 ```
 
-### 7.5 Error Scenarios
-- seat_ids kosong -> 400
-- kursi tidak locked / bukan milik user -> 409
-- kursi tidak ditemukan -> 409
-- order tidak ditemukan -> 404
-- akses order orang lain -> 403
-- cancel/pay non-pending -> 409
-- Scanner -> 403
+**Response sukses:**
+```json
+{
+  "success": true,
+  "message": "Transaksi pembayaran berhasil dibuat.",
+  "data": {
+    "snap_token": "a1b2c3d4-...",
+    "redirect_url": "https://app.sandbox.midtrans.com/snap/v4/redirection/...",
+    "order_id": "1",
+    "payment_id": "5",
+    "midtrans_order_id": "ORDER-1-1794225572546"
+  }
+}
+```
+
+Gunakan `snap_token` untuk frontend (Snap.js) atau buka `redirect_url` di browser untuk proses pembayaran di sandbox Midtrans.
+
+### 7.6 Cek Status Pembayaran & Tiket
+```bash
+curl -X GET http://localhost:5000/api/payments/1 \
+  -H "Authorization: Bearer <TOKEN_CUSTOMER>"
+```
+
+Response berisi order, items, payments[], dan tickets[] (jika sudah paid).
+
+### 7.7 Webhook Notifikasi (Midtrans → Server)
+- Endpoint: `POST /api/payments/notification` (publik, tanpa token)
+- Midtrans akan mengirim notifikasi otomatis saat status pembayaran berubah
+- **Wajib:** Server harus bisa diakses dari internet (production) atau gunakan tunneling (ngrok/localtunnel) saat development
+- Verifikasi signature: `SHA512(order_id + status_code + gross_amount + server_key)` dicocokkan dengan `signature_key` dari Midtrans
+
+**Status Midtrans → Internal:**
+| Midtrans | Internal | Aksi Server |
+|---|---|---|
+| `capture` / `settlement` | `success` | Order → `paid`, kursi → `booked`, generate tiket |
+| `pending` | `pending` | Tunggu konfirmasi |
+| `deny` | `failed` | Order → `cancelled` (jika masih pending), kuota & kursi pulih |
+| `expire` | `expired` | Order → `expired`, kuota & kursi pulih |
+| `cancel` / `refund` / `partial_refund` | `failed` | Order → `cancelled` (jika masih pending) |
+
+**Idempotent:** Webhook `settlement` yang dikirim ulang **tidak** menghasilkan tiket duplikat (server cek existing tickets dulu).
+
+### 7.8 Test Webhook Manual (Debug)
+Jika webhook gagal/tertunda, kirim ulang manual:
+```bash
+curl -X POST http://localhost:5000/api/payments/notification \
+  -H "Content-Type: application/json" \
+  -d '{
+    "order_id": "ORDER-1-1794225572546",
+    "status_code": "200",
+    "gross_amount": "500000",
+    "signature_key": "<HITUNG_SHA512>",
+    "transaction_status": "settlement"
+  }'
+```
+Hitung `signature_key`:
+```js
+const crypto = require('crypto');
+const sig = crypto.createHash('sha512')
+  .update('ORDER-1-1794225572546' + '200' + '500000' + 'SB-Mid-server-xxx')
+  .digest('hex');
+```
+
+### 7.9 Verifikasi Idempotency Webhook
+1. Kirim webhook `settlement` pertama → order `paid`, tiket ter-generate
+2. Kirim webhook `settlement` **sama** sekali lagi → response `Sudah diproses`, tiket **tidak** bertambah
+2. Cek `GET /api/payments/:orderId` → `tickets.length` tetap sama
+
+### 7.10 Error Scenarios Payment
+| No | Scenario | Request | Expected |
+|----|----------|---------|----------|
+| 1 | Order tidak ditemukan | `POST /api/payments/999/create` | `404` |
+| 2 | Order bukan milik user | `POST /api/payments/1/create` (user lain) | `403` |
+| 3 | Order bukan `pending` | `POST /api/payments/1/create` (sudah paid) | `409` |
+| 4 | Order kadaluwarsa | `POST /api/payments/1/create` (batas_waktu_bayar lewat) | `409` |
+| 5 | Webhook signature invalid | `POST /api/payments/notification` signature salah | `403` |
+| 6 | Webhook payment not found | `POST /api/payments/notification` order_id tidak ada | `404` |
+| 7 | Webhook amount mismatch | `POST /api/payments/notification` gross_amount beda | `400` |
+| 8 | Webhook tanpa server key | `POST /api/payments/notification` server key kosong | `403` |
+| 9 | Manual pay route dihapus | `POST /api/orders/1/pay` | `404` |
+| 10 | Scanner akses payment | `POST /api/payments/1/create` token scanner | `403` |
+| 11 | Customer belom login | `POST /api/payments/1/create` tanpa token | `401` |
+| 12 | Midtrans status `deny` | webhook `deny` → order `cancelled` | `200` + order cancelled |
+| 13 | Midtrans status `expire` | webhook `expire` → order `expired` | `200` + order expired |
+
+---
+
+## 8. MIDTRANS SANDBOX SETUP (Step-by-step)
+
+1. **Daftar & Login**: https://app.sandbox.midtrans.com/register
+2. **Dapatkan Keys**: Settings → Access Keys → salin **Server Key** & **Client Key**
+3. **Set .env**:
+   ```env
+   MIDTRANS_SERVER_KEY=SB-Mid-server-xxx
+   MIDTRANS_CLIENT_KEY=Mid-client-xxx
+   MIDTRANS_IS_PRODUCTION=false
+   ```
+4. **Jalankan Migration**: `config/migrations/004_payments_midtrans.sql` di Supabase SQL Editor
+5. **Restart Server**: `npm start`
+6. **Test Create Transaction**: 
+   - Login customer → buat order → `POST /api/payments/:orderId/create`
+   - Buka `redirect_url` di browser → pilih metode bayar (VA, QRIS, GoPay, dll.)
+   - Selesaikan pembayaran di sandbox Midtrans
+7. **Verifikasi Webhook**: 
+   - Server log seharusnya menampilkan `[MIDTRANS_WEBHOOK] mapped status: settlement`
+   - Cek `GET /api/payments/:orderId` → status `paid`, tiket muncul
+
+### Development Tunneling (untuk webhook lokal)
+Gunakan ngrok/localtunnel agar Midtrans bisa kirim webhook ke localhost:
+```bash
+npx ngrok http 5000
+# Atau
+npx localtunnel --port 5000
+```
+Update URL notifikasi di Midtrans Dashboard → Settings → Notifications → URL: `https://xxx.ngrok-free.app/api/payments/notification`
+
+---
+
+## 9. TABEL RINGKASAN ENDPOINT (TERBARU)
+
+### Payment Gateway
+| Method | Endpoint | Akses | Keterangan |
+|---|---|---|---|
+| POST | `/api/payments/:orderId/create` | Customer/Admin/SuperAdmin | Buat transaksi Snap |
+| GET | `/api/payments/:orderId` | Customer/Admin/SuperAdmin | Status pembayaran + tiket |
+| POST | `/api/payments/notification` | Publik | Webhook Midtrans |
+
+---
+
+## 10. CEK STATUS SERVER
+
+(Sama seperti sebelumnya)
+
+---
