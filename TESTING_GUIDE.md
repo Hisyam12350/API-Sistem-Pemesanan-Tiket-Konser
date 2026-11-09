@@ -318,13 +318,13 @@ Kursi kembali ke status `available`.
 
 ### Admin (`Authorization: Bearer <TOKEN_ADMIN>`)
 
-| Method | Endpoint | Body (JSON) | Keterangan |
-|--------|----------|-------------|------------|
+| Method | Endpoint | Body (JSON/Form-Data) | Keterangan |
+|--------|----------|----------------------|------------|
 | POST | `/api/auth/login` | `{email, password}` | Dapatkan token |
 | POST | `/api/genres` | `{nama_genre, deskripsi}` | Buat genre |
 | GET | `/api/genres` | - | Lihat semua genre |
-| POST | `/api/venues` | `{venue_type_id, nama_venue, alamat, kota, kapasitas}` | Buat tempat |
-| POST | `/api/events` | `{nama_event, waktu_event, venue_id, genre_id, ...}` | Buat event |
+| POST | `/api/venues` | `{venue_type_id, nama_venue, alamat, kota, kapasitas}` (form-data: gambar) | Buat tempat |
+| POST | `/api/events` | `{nama_event, waktu_event, venue_id, genre_id, ...}` (form-data: banner) | Buat event |
 | POST | `/api/ticket-categories` | `{event_id, nama_kategori, harga, kuota_total}` | Buat kategori tiket |
 | POST | `/api/seats/generate` | `{kategori_id, jumlah, prefix?, start_number?}` | Generate kursi |
 | GET | `/api/seats?kategori_id=X` | - | Lihat kursi |
@@ -341,15 +341,29 @@ Kursi kembali ke status `available`.
 | GET | `/api/seats?kategori_id=X` | - | Lihat kursi per kategori |
 | POST | `/api/seats/lock` | `{seat_ids: [..], minutes?}` | Lock kursi sementara |
 | POST | `/api/seats/unlock` | `{seat_ids: [..]}` | Buka lock kursi |
+| POST | `/api/orders` | `{seat_ids: [..]}` | Buat order dari kursi terkunci |
+| GET | `/api/orders` | - | Daftar order milik sendiri |
+| GET | `/api/orders/:id` | - | Detail order + items + seats |
+| POST | `/api/orders/:id/cancel` | - | Batalkan order pending |
+| POST | `/api/payments/:orderId/create` | - | Buat transaksi Midtrans Snap |
+| GET | `/api/payments/:orderId` | - | Status pembayaran + tiket |
 
 ### Publik (tanpa token)
 
 | Method | Endpoint | Keterangan |
 |--------|----------|------------|
 | GET | `/api/venue-types` | Daftar tipe tempat |
-| GET | `/api/venues` | Daftar tempat |
+| GET | `/api/venues` | Daftar tempat (filter, search, pagination) |
 | GET | `/api/venues/:id` | Detail tempat |
 | GET | `/api/genres` | Daftar genre |
+| POST | `/api/payments/notification` | Webhook Midtrans (public) |
+
+### Scanner (`Authorization: Bearer <TOKEN_SCANNER>`) — Roadmap
+
+| Method | Endpoint | Keterangan |
+|--------|----------|------------|
+| POST | `/api/scanner/check-in` | Scan & validasi tiket (QR Code) |
+| GET | `/api/scanner/scanned-tickets` | Daftar tiket yang sudah di-scan |
 
 ## 5. SCENARIO ERROR YANG HARUS DICOBA
 
