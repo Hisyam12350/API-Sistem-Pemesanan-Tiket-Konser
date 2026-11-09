@@ -459,7 +459,8 @@ Response berisi order, items, payments[], dan tickets[] (jika sudah paid).
 - Endpoint: `POST /api/payments/notification` (publik, tanpa token)
 - Midtrans akan mengirim notifikasi otomatis saat status pembayaran berubah
 - **Wajib:** Server harus bisa diakses dari internet (production) atau gunakan tunneling (ngrok/localtunnel) saat development
-- Verifikasi signature: `SHA512(order_id + status_code + gross_amount + server_key)` dicocokkan dengan `signature_key` dari Midtrans
+- Verifikasi signature: `SHA512(order_id + status_code + gross_amount + server_key)` dicocokkan dengan `signature_key` dari Midtrans; fallback ke `MIDTRANS_SIGNATURE_KEY` jika diset; fallback HMAC-SHA512 juga didukung
+- Jika signature lokal gagal, server **otomatis memverifikasi ke Midtrans API** (`GET /v2/{order_id}/status`) sebagai fallback
 
 **Status Midtrans → Internal:**
 | Midtrans | Internal | Aksi Server |
@@ -480,23 +481,23 @@ curl -X POST http://localhost:5000/api/payments/notification \
   -d '{
     "order_id": "ORDER-1-1794225572546",
     "status_code": "200",
-    "gross_amount": "500000",
+    "gross_amount": "500000.00",
     "signature_key": "<HITUNG_SHA512>",
     "transaction_status": "settlement"
   }'
 ```
-Hitung `signature_key`:
+Hitung `signature_key` (gunakan gross_amount sesuai yang dikirim Midtrans, mis. `500000.00`):
 ```js
 const crypto = require('crypto');
 const sig = crypto.createHash('sha512')
-  .update('ORDER-1-1794225572546' + '200' + '500000' + 'SB-Mid-server-xxx')
+  .update('ORDER-1-1794225572546' + '200' + '500000.00' + 'SB-Mid-server-xxx')
   .digest('hex');
 ```
 
 ### 7.9 Verifikasi Idempotency Webhook
 1. Kirim webhook `settlement` pertama → order `paid`, tiket ter-generate
 2. Kirim webhook `settlement` **sama** sekali lagi → response `Sudah diproses`, tiket **tidak** bertambah
-2. Cek `GET /api/payments/:orderId` → `tickets.length` tetap sama
+3. Cek `GET /api/payments/:orderId` → `tickets.length` tetap sama
 
 ### 7.10 Error Scenarios Payment
 | No | Scenario | Request | Expected |
@@ -525,6 +526,7 @@ const sig = crypto.createHash('sha512')
    ```env
    MIDTRANS_SERVER_KEY=SB-Mid-server-xxx
    MIDTRANS_CLIENT_KEY=Mid-client-xxx
+   MIDTRANS_SIGNATURE_KEY=SB-Mid-server-xxx
    MIDTRANS_IS_PRODUCTION=false
    ```
 4. **Jalankan Migration**: `config/migrations/004_payments_midtrans.sql` di Supabase SQL Editor

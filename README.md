@@ -139,6 +139,7 @@ PORT=5000
 # Midtrans Payment Gateway
 MIDTRANS_SERVER_KEY=SB-Mid-server-xxx
 MIDTRANS_CLIENT_KEY=Mid-client-xxx
+MIDTRANS_SIGNATURE_KEY=SB-Mid-server-xxx
 MIDTRANS_IS_PRODUCTION=false
 ```
 
@@ -352,7 +353,7 @@ curl -X POST http://localhost:5000/api/ticket-categories \
 # a. Login customer & lock kursi
 curl -X POST http://localhost:5000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"customer@mail.com","password":"rahasia123"}'
+  -d '{"email":"shasa@gmail.com","password":"customer123"}'
 
 curl -X POST http://localhost:5000/api/seats/lock \
   -H "Authorization: Bearer <TOKEN_CUSTOMER>" \
@@ -390,8 +391,9 @@ curl -X GET http://localhost:5000/api/payments/1 \
 - Kolom `orders` menggunakan nama `cutsomer_id` (typo) — perhatikan saat query.
 - **Midtrans Payment Gateway:**
   - `MIDTRANS_SERVER_KEY` **harus** diisi dengan Server Key valid dari dashboard Midtrans Sandbox/Production.
+  - `MIDTRANS_SIGNATURE_KEY` (opsional) — fallback key khusus untuk verifikasi signature webhook; jika tidak diisi, fallback ke `MIDTRANS_SERVER_KEY`.
   - Webhook endpoint `/api/payments/notification` **harus bisa diakses dari internet** (production) atau gunakan tunneling (ngrok/localtunnel) untuk development.
-  - Signature webhook diverifikasi dengan `SHA512(order_id + status_code + gross_amount + server_key)`.
+  - Signature webhook diverifikasi dengan `SHA512(order_id + status_code + gross_amount + server_key)` — dicocokkan dengan `signature_key` dari Midtrans; fallback HMAC-SHA512 juga didukung.
   - Webhook bersifat **idempotent** — pengiriman ulang `settlement` tidak menghasilkan tiket duplikat.
   - Pastikan `MIDTRANS_SERVER_KEY` di `.env` **sama persis** dengan Server Key di dashboard Midtrans,否则 webhook signature akan gagal (403).
 
