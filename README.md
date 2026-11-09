@@ -282,35 +282,36 @@ API/
 │   ├── db.js                      # PostgreSQL connection pool (pg)
 │   └── jwt.js                     # Sumber tunggal konfigurasi JWT
 ├── controllers/                   # Logika request/response per resource
-│   ├── authController.js
-│   ├── userController.js
-│   ├── eventsController.js
-│   ├── ticketCategoriesController.js
-│   ├── seatsController.js
-│   ├── ordersController.js
+│   ├── authController.js          # Register, login, profil user
+│   ├── userController.js          # CRUD user (admin-only)
+│   ├── eventsController.js        # CRUD event + upload banner
+│   ├── ticketCategoriesController.js  # CRUD kategori tiket per event
+│   ├── seatsController.js         # Generate, lock, unlock kursi
+│   ├── ordersController.js        # Buat, list, detail, batalkan order
 │   ├── venueTypesController.js    # CRUD master tipe tempat (Stadion, Indoor, Outdoor, Lapangan)
 │   ├── venuesController.js        # CRUD venue + upload gambar
 │   ├── genresController.js        # CRUD master genre musik
+│   ├── paymentsController.js      # Create payment, get status, webhook notification
 ├── middleware/
 │   ├── authMiddleware.js          # verifyToken & authorizeRoles
 │   └── uploadMiddleware.js        # Konfigurasi multer (upload gambar)
 ├── models/                        # Akses data ke database (Supabase/pg)
-│   ├── userModel.js
-│   ├── events.js
-│   ├── ticketCategories.js
-│   ├── seats.js
-│   ├── orders.js
+│   ├── userModel.js               # User & auth helpers
+│   ├── events.js                  # Model event (waktu, venue, genre)
+│   ├── ticketCategories.js        # Model kategori tiket (harga, kuota)
+│   ├── seats.js                   # Model kursi (status, locked_by, locked_until)
+│   ├── orders.js                  # Model order (status_order, total_pembayaran, batas_waktu_bayar)
 │   ├── payments.js                # Model pembayaran & tiket (Midtrans)
 │   ├── venueTypes.js              # Model tabel venue_types
 │   ├── venues.js                  # Model tabel venues
 │   └── genres.js                  # Model tabel genres
 ├── routes/                        # Definisi endpoint per resource
-│   ├── authRoutes.js
-│   ├── userRoutes.js
-│   ├── eventRoutes.js
-│   ├── ticketCategoryRoutes.js
-│   ├── seatRoutes.js
-│   ├── orderRoutes.js
+│   ├── authRoutes.js              # POST /register, /login, GET /me
+│   ├── userRoutes.js              # CRUD user (admin)
+│   ├── eventRoutes.js             # CRUD event (admin)
+│   ├── ticketCategoryRoutes.js    # CRUD kategori tiket (admin)
+│   ├── seatRoutes.js              # Generate, lock, unlock kursi
+│   ├── orderRoutes.js             # Buat, list, detail, cancel order
 │   ├── paymentRoutes.js           # POST /create, GET /:id, POST /notification
 │   ├── venueTypeRoutes.js         # GET/POST/DELETE /api/venue-types
 │   ├── venueRoutes.js             # GET/POST/PUT/DELETE /api/venues
