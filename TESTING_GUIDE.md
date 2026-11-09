@@ -381,22 +381,6 @@ Kursi kembali ke status `available`.
 
 ---
 
-## 6. CEK STATUS SERVER
-
-Pastikan server nyala di terminal API:
-
-```bash
-npm start
-```
-
-Harus muncul:
-```
-API Tiket Konser UKK berjalan di http://localhost:5000
-Akses dari emulator: http://10.0.2.2:5000
-```
-
----
-
 > **Catatan:** Semua endpoint yang memerlukan `Authorization` harus disertakan header `Authorization: Bearer <token>`. Token didapatkan dari `POST /api/auth/login` setelah register atau login berhasil.
 
 ## 7. FLOW PAYMENT GATEWAY (MIDTRANS SNAP)
@@ -410,6 +394,7 @@ Akses dari emulator: http://10.0.2.2:5000
    ```env
    MIDTRANS_SERVER_KEY=SB-Mid-server-xxx
    MIDTRANS_CLIENT_KEY=Mid-client-xxx
+   MIDTRANS_SIGNATURE_KEY=SB-Mid-server-xxx
    MIDTRANS_IS_PRODUCTION=false
    ```
 4. Jalankan migration `config/migrations/004_payments_midtrans.sql` di Supabase SQL Editor
@@ -475,6 +460,7 @@ Response berisi order, items, payments[], dan tickets[] (jika sudah paid).
 - **Wajib:** Server harus bisa diakses dari internet (production) atau gunakan tunneling (ngrok/localtunnel) saat development
 - Verifikasi signature: `SHA512(order_id + status_code + gross_amount + server_key)` dicocokkan dengan `signature_key` dari Midtrans; fallback ke `MIDTRANS_SIGNATURE_KEY` jika diset; fallback HMAC-SHA512 juga didukung
 - Jika signature lokal gagal, server **otomatis memverifikasi ke Midtrans API** (`GET /v2/{order_id}/status`) sebagai fallback
+- **Testing fallback verification**: Jika signature gagal, periksa log server untuk `[MIDTRANS_WEBHOOK] signature invalid`, lalu verifikasi secara manual melalui Midtrans API atau kirim ulang webhook dengan signature yang benar
 
 **Status Midtrans → Internal:**
 | Midtrans | Internal | Aksi Server |
