@@ -299,6 +299,7 @@ API/
 │   ├── ticketCategories.js
 │   ├── seats.js
 │   ├── orders.js
+│   ├── payments.js                # Model pembayaran & tiket (Midtrans)
 │   ├── venueTypes.js              # Model tabel venue_types
 │   ├── venues.js                  # Model tabel venues
 │   └── genres.js                  # Model tabel genres
@@ -309,11 +310,13 @@ API/
 │   ├── ticketCategoryRoutes.js
 │   ├── seatRoutes.js
 │   ├── orderRoutes.js
+│   ├── paymentRoutes.js           # POST /create, GET /:id, POST /notification
 │   ├── venueTypeRoutes.js         # GET/POST/DELETE /api/venue-types
-│   └── venueRoutes.js             # GET/POST/PUT/DELETE /api/venues
+│   ├── venueRoutes.js             # GET/POST/PUT/DELETE /api/venues
 │   ├── genreRoutes.js             # GET/POST/PUT/DELETE /api/genres
 ├── utils/                         # Utilitas & helper
 │   ├── storageService.js          # Upload/hapus file ke Supabase Storage
+│   └── midtransService.js         # Midtrans Snap: createTransaction, verifySignature, mapStatus
 ├── app.js                         # Entry point aplikasi
 └── package.json
 ```
@@ -344,14 +347,53 @@ curl -X POST http://localhost:5000/api/ticket-categories \
   -d '{"event_id":1,"nama_kategori":"VIP","harga":500000,"kuota_total":100}'
 ```
 
+**4. Flow Payment Gateway (Customer)**
+```bash
+# a. Login customer & lock kursi
+curl -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"customer@mail.com","password":"rahasia123"}'
+
+curl -X POST http://localhost:5000/api/seats/lock \
+  -H "Authorization: Bearer <TOKEN_CUSTOMER>" \
+  -H "Content-Type: application/json" \
+  -d '{"seat_ids":[1,2],"minutes":15}'
+
+# b. Buat order
+curl -X POST http://localhost:5000/api/orders \
+  -H "Authorization: Bearer <TOKEN_CUSTOMER>" \
+  -H "Content-Type: application/json" \
+  -d '{"seat_ids":[1,2]}'
+
+# c. Buat transaksi Midtrans Snap
+curl -X POST http://localhost:5000/api/payments/1/create \
+  -H "Authorization: Bearer <TOKEN_CUSTOMER>" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+# → dapat snap_token & redirect_url
+
+# d. Buka redirect_url di browser → bayar di sandbox Midtrans
+
+# e. Cek status (setelah webhook settlement)
+curl -X GET http://localhost:5000/api/payments/1 \
+  -H "Authorization: Bearer <TOKEN_CUSTOMER>"
+# → status paid, tiket ter-generate
+```
+
 ---
 
 ## ⚠️ Catatan Penting
 
 - **`JWT_SECRET` wajib diset** di `.env`. Fallback default hanya untuk development — jangan dipakai di produksi.
-- Jalankan **migration terbaru secara berurutan** (`001_add_order_item_seats.sql`, `002_venues_google_places.sql`, `003_add_locked_by_to_seats.sql`) agar tabel `order_item_seats`, `venue_types`, `venues`, `locked_by`, dan trigger terbaru tersedia.
+- Jalankan **migration terbaru secara berurutan** (`001_add_order_item_seats.sql`, `002_venues_google_places.sql`, `003_add_locked_by_to_seats.sql`, `004_payments_midtrans.sql`) agar tabel `order_item_seats`, `venue_types`, `venues`, `locked_by`, `payments` (kolom Snap), dan trigger terbaru tersedia.
 - **Jangan commit file `.env`** ke repository (pastikan sudah masuk `.gitignore`).
-- Kolom `orders` menggunakan nama `cutsomer_id` (sesuai skema Supabase yang ada) — perhatikan saat query.
+- Kolom `orders` menggunakan nama `cutsomer_id` (typo) — perhatikan saat query.
+- **Midtrans Payment Gateway:**
+  - `MIDTRANS_SERVER_KEY` **harus** diisi dengan Server Key valid dari dashboard Midtrans Sandbox/Production.
+  - Webhook endpoint `/api/payments/notification` **harus bisa diakses dari internet** (production) atau gunakan tunneling (ngrok/localtunnel) untuk development.
+  - Signature webhook diverifikasi dengan `SHA512(order_id + status_code + gross_amount + server_key)`.
+  - Webhook bersifat **idempotent** — pengiriman ulang `settlement` tidak menghasilkan tiket duplikat.
+  - Pastikan `MIDTRANS_SERVER_KEY` di `.env` **sama persis** dengan Server Key di dashboard Midtrans,否则 webhook signature akan gagal (403).
 
 ---
 
