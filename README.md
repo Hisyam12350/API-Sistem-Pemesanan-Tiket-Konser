@@ -300,16 +300,17 @@ API/
 │   ├── db.js                      # PostgreSQL connection pool (pg)
 │   └── jwt.js                     # Sumber tunggal konfigurasi JWT
 ├── controllers/                   # Logika request/response per resource
-│   ├── authController.js          # Register, login, profil user
-│   ├── userController.js          # CRUD user (admin-only)
-│   ├── eventsController.js        # CRUD event + upload banner
-│   ├── ticketCategoriesController.js  # CRUD kategori tiket per event
-│   ├── seatsController.js         # Generate, lock, unlock kursi
-│   ├── ordersController.js        # Buat, list, detail, batalkan order
-│   ├── venueTypesController.js    # CRUD master tipe tempat (Stadion, Indoor, Outdoor, Lapangan)
-│   ├── venuesController.js        # CRUD venue + upload gambar
-│   ├── genresController.js        # CRUD master genre musik
-│   ├── paymentsController.js      # Create payment, get status, webhook notification
+ │   ├── authController.js          # Register, login, profil user
+ │   ├── userController.js          # CRUD user (admin-only)
+ │   ├── eventsController.js        # CRUD event + upload banner
+ │   ├── ticketCategoriesController.js  # CRUD kategori tiket per event
+ │   ├── seatsController.js         # Generate, lock, unlock kursi
+ │   ├── ordersController.js        # Buat, list, detail, batalkan order
+ │   ├── venueTypesController.js    # CRUD master tipe tempat (Stadion, Indoor, Outdoor, Lapangan)
+ │   ├── venuesController.js        # CRUD venue + upload gambar
+ │   ├── genresController.js        # CRUD master genre musik
+ │   ├── paymentsController.js      # Create payment, get status, webhook notification
+ │   └── scannerController.js       # Check-in, scanned tickets, event scanned tickets
 ├── middleware/
 │   ├── authMiddleware.js          # verifyToken & authorizeRoles
 │   └── uploadMiddleware.js        # Konfigurasi multer (upload gambar)
