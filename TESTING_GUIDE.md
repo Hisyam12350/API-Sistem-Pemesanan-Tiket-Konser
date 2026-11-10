@@ -1,32 +1,40 @@
-# 🧪 Panduan Testing API — Customer & Admin
-
-Backend REST API Sistem Pemesanan Tiket Konser  
-Base URL: `http://localhost:5000`
-
----
-
-## DAFTAR ISI
-
-1. [Persiapan Awal](#persiapan-awal)
-2. [Flow Admin (Pembuat Event)](#flow-admin)
-3. [Flow Customer (Pembeli Tiket)](#flow-customer)
-4. [Tabel Ringkasan Endpoint](#tabel-ringkasan-endpoint)
-5. [Scenario Error yang Harus Dicoba](#scenario-error-yang-harus-dicoba)
-
----
-
-## 1. PERSIAPAN AWAL
-
-Pastikan server API berjalan:
-
-```bash
-cd API
-npm start
-# atau development mode
-npm run dev
-```
-
-Server akan berjalan di `http://localhost:5000`.
+# 🧪 Panduan Testing API — Customer, Admin & Scanner
+ 
+ Backend REST API Sistem Pemesanan Tiket Konser  
+ Base URL: `http://localhost:5000`
+ 
+ ---
+ 
+ ## DAFTAR ISI
+ 
+ 1. [Persiapan Awal](#persiapan-awal)
+ 2. [Flow Admin (Pembuat Event)](#flow-admin)
+ 3. [Flow Customer (Pembeli Tiket)](#flow-customer)
+ 4. [Flow Scanner (Check-in Tiket)](#flow-scanner)
+ 5. [Testing Validasi & Rate Limit](#testing-validasi--rate-limit)
+ 6. [Tabel Ringkasan Endpoint](#tabel-ringkasan-endpoint)
+ 7. [Scenario Error yang Harus Dicoba](#scenario-error-yang-harus-dicoba)
+ 
+ ---
+ 
+ ## 1. PERSIAPAN AWAL
+ 
+ Pastikan server API berjalan:
+ 
+ ```bash
+ cd API
+ npm start
+ # atau development mode
+ npm run dev
+ ```
+ 
+ Server akan berjalan di `http://localhost:5000`.
+ 
+ Jalankan migration scanner indexes:
+ ```bash
+ # Di Supabase SQL Editor, jalankan:
+ # config/migrations/005_scanner_indexes.sql
+ ```
 
 ## 2. FLOW ADMIN (Pembuat Event)
 
@@ -313,10 +321,166 @@ curl -X POST http://localhost:5000/api/seats/unlock \
 ```
 
 Kursi kembali ke status `available`.
-
-## 4. TABEL RINGKASAN ENDPOINT
-
-### Admin (`Authorization: Bearer <TOKEN_ADMIN>`)
+ 
+ ## 4. FLOW SCANNER (Check-in Tiket)
+ 
+ Scanner bertugas: memvalidasi dan check-in tiket di lokasi event via QR Code.
+ 
+ ### 4.1 Login sebagai Scanner
+ 
+ ```bash
+ curl -X POST http://localhost:5000/api/auth/login \
+   -H "Content-Type: application/json" \
+   -d '{"email":"scanner@test.com","password":"scanner123"}'
+ ```
+ 
+ **Response:** Ambil `token` dari response, simpan sebagai `<TOKEN_SCANNER>`.
+ 
+ ---
+ 
+ ### 4.2 Check-in Tiket (Scan QR Code)
+ 
+ QR Code berisi `kode_unik` tiket (contoh: `TKT-1-5-ABC123`). Gunakan value tersebut:
+ 
+ ```bash
+ curl -X POST http://localhost:5000/api/scanner/check-in \
+   -H "Authorization: Bearer <TOKEN_SCANNER>" \
+   -H "Content-Type: application/json" \
+   -d '{"kode_unik":"TKT-1-5-ABC123"}'
+ ```
+ 
+ **Response sukses (200):**
+ ```json
+ {
+   "success": true,
+   "message": "Check-in berhasil.",
+   "ticket": {
+     "id": 123,
+     "kode_unik": "TKT-1-5-ABC123",
+     "status_tiket": "scanned",
+     "scanned_at": "2026-11-10T15:30:00.000Z",
+     "scanned_by": 5,
+     "seat": { "id": 456, "nomor_kursi": "A1", "kategori_id": 5 },
+     "category": { "id": 5, "nama_kategori": "VIP" }
+   },
+   "event": {
+     "id": 1,
+     "nama_event": "Konser Rock 2026",
+     "waktu_event": "2026-12-01T19:00:00.000Z",
+     "status": "ongoing",
+     "venue": { "id": 10, "nama_venue": "Stadion Utama", "alamat": "Jl. Sudirman No. 1" },
+     "genre": { "id": 3, "nama_genre": "Rock" }
+   }
+ }
+ ```
+ 
+ **Error responses:**
+ - `404` — Tiket tidak ditemukan
+ - `409` — Tiket sudah dipindai / Event tidak valid / Event sudah berakhir
+ - `403` — Bukan role Scanner/Admin/SuperAdmin
+ - `429` — Rate limit (max 30 request/menit)
+ 
+ ---
+ 
+ ### 4.3 Lihat Tiket yang Sudah Dipindai (oleh scanner ini)
+ 
+ ```bash
+ curl -X GET "http://localhost:5000/api/scanner/scanned-tickets?page=1&limit=20" \
+   -H "Authorization: Bearer <TOKEN_SCANNER>"
+ ```
+ 
+ ---
+ 
+ ### 4.4 Lihat Semua Tiket Dipindai untuk Event Tertentu (Admin/Scanner)
+ 
+ ```bash
+ curl -X GET "http://localhost:5000/api/scanner/events/1/scanned?page=1&limit=50" \
+   -H "Authorization: Bearer <TOKEN_SCANNER>"
+ ```
+ 
+ ---
+ 
+ ### 4.5 Generate QR Code (untuk testing)
+ 
+ Backend menyediakan generator QR Code. Gunakan di controller atau buat script test:
+ 
+ ```js
+ // test-qr.js
+ const { generateQRCodeSVG, generateQRCodeDataURL } = require('./utils/qrCodeGenerator');
+ 
+ async function test() {
+   const svg = await generateQRCodeSVG('TKT-1-5-ABC123');
+   console.log('SVG length:', svg.length);
+   // Simpan ke file untuk testing
+   require('fs').writeFileSync('test-qr.svg', svg);
+   
+   const dataUrl = await generateQRCodeDataURL('TKT-1-5-ABC123');
+   console.log('Data URL:', dataUrl.substring(0, 100) + '...');
+ }
+ test();
+ ```
+ 
+ Jalankan: `node test-qr.js` → hasil `test-qr.svg` bisa dibuka di browser.
+ 
+ ---
+ 
+ ## 5. TESTING VALIDASI & RATE LIMIT
+ 
+ ### 5.1 Testing Validasi Input (Zod)
+ 
+ Semua endpoint POST/PUT sekarang divalidasi. Test kirim body invalid:
+ 
+ **Auth Register - field kosong:**
+ ```bash
+ curl -X POST http://localhost:5000/api/auth/register \
+   -H "Content-Type: application/json" \
+   -d '{"email":"test@mail.com"}'
+ # Expected 400: { "success": false, "message": "Validasi gagal", "errors": { "username": ["Username minimal 3 karakter"], "password": ["Password minimal 6 karakter"] } }
+ ```
+ 
+ **Event Create - format salah:**
+ ```bash
+ curl -X POST http://localhost:5000/api/events \
+   -H "Authorization: Bearer <TOKEN_ADMIN>" \
+   -H "Content-Type: application/json" \
+   -d '{"nama_event":"Test","waktu_event":"invalid-date"}'
+ # Expected 400: { "errors": { "waktu_event": ["Format waktu_event tidak valid (ISO 8601)"] } }
+ ```
+ 
+ **Seat Lock - array kosong:**
+ ```bash
+ curl -X POST http://localhost:5000/api/seats/lock \
+   -H "Authorization: Bearer <TOKEN_CUSTOMER>" \
+   -H "Content-Type: application/json" \
+   -d '{"seat_ids":[]}'
+ # Expected 400: { "errors": { "seat_ids": ["seat_ids minimal 1 item"] } }
+ ```
+ 
+ ### 5.2 Testing Rate Limiting
+ 
+ | Endpoint | Limit | Test |
+|----------|-------|------|
+| `/api/auth/login` | 10 req / 15 menit | Spam login 11x → 429 |
+| `/api/auth/register` | 10 req / 15 menit | Spam register 11x → 429 |
+| `/api/seats/lock` | 20 req / 5 menit | Spam lock 21x → 429 |
+| `/api/payments/:orderId/create` | 10 req / 5 menit | Spam create 11x → 429 |
+| `/api/seats/generate` | 10 req / 1 jam | Spam generate 11x → 429 |
+| `/api/scanner/check-in` | 30 req / 1 menit | Spam check-in 31x → 429 |
+| Global (semua) | 100 req / 15 menit | Spam 101x → 429 |
+ 
+ **Response 429 format:**
+ ```json
+ {
+   "success": false,
+   "message": "Terlalu banyak percobaan login/registrasi"
+ }
+ ```
+ 
+ Header response: `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+ 
+ ---
+ 
+ ## 6. TABEL RINGKASAN ENDPOINT
 
 | Method | Endpoint | Body (JSON/Form-Data) | Keterangan |
 |--------|----------|----------------------|------------|
@@ -358,26 +522,37 @@ Kursi kembali ke status `available`.
 | GET | `/api/genres` | Daftar genre |
 | POST | `/api/payments/notification` | Webhook Midtrans (public) |
 
-### Scanner (`Authorization: Bearer <TOKEN_SCANNER>`) — Roadmap
-
-| Method | Endpoint | Keterangan |
-|--------|----------|------------|
-| POST | `/api/scanner/check-in` | Scan & validasi tiket (QR Code) |
-| GET | `/api/scanner/scanned-tickets` | Daftar tiket yang sudah di-scan |
-
-## 5. SCENARIO ERROR YANG HARUS DICOBA
-
-| No | Scenario | Request | Expected |
-|----|----------|---------|----------|
-| 1 | Login salah password | `POST /api/auth/login` salah | `401` |
-| 2 | Buat event tanpa token | `POST /api/events` tanpa header | `401` |
-| 3 | Customer buat venue | `POST /api/venues` dengan token customer | `403` |
-| 4 | Generate kursi duplikat | `POST /api/seats/generate` nomor sama | `409` |
-| 5 | Lock kursi yang sudah locked | `POST /api/seats/lock` seat yang sama | `409` |
-| 6 | Lock lebih dari 60 menit | `minutes: 120` | `400` (maks 60) |
-| 7 | Unlock kursi yang `available` | `POST /api/seats/unlock` seat belum di-lock | `200` tapi `skipped` |
-| 8 | Event dengan genre_id yang tidak ada | `POST /api/events` `genre_id: 999` | `404` |
-| 9 | Venue tidak ada saat buat event | `POST /api/events` `venue_id: 999` | `404` |
+### Scanner (`Authorization: Bearer <TOKEN_SCANNER>`)
+ 
+ | Method | Endpoint | Body (JSON) | Keterangan |
+ |--------|----------|-------------|------------|
+ | POST | `/api/scanner/check-in` | `{kode_unik}` | Scan & validasi tiket (QR Code) |
+ | GET | `/api/scanner/scanned-tickets` | - | Daftar tiket yang sudah di-scan (pagination) |
+ | GET | `/api/scanner/events/:eventId/scanned` | - | Daftar tiket dipindai untuk event (pagination) |
+ 
+ ## 7. SCENARIO ERROR YANG HARUS DICOBA
+ 
+ | No | Scenario | Request | Expected |
+ |----|----------|---------|----------|
+ | 1 | Login salah password | `POST /api/auth/login` salah | `401` |
+ | 2 | Buat event tanpa token | `POST /api/events` tanpa header | `401` |
+ | 3 | Customer buat venue | `POST /api/venues` dengan token customer | `403` |
+ | 4 | Generate kursi duplikat | `POST /api/seats/generate` nomor sama | `409` |
+ | 5 | Lock kursi yang sudah locked | `POST /api/seats/lock` seat yang sama | `409` |
+ | 6 | Lock lebih dari 60 menit | `minutes: 120` | `400` (maks 60) |
+ | 7 | Unlock kursi yang `available` | `POST /api/seats/unlock` seat belum di-lock | `200` tapi `skipped` |
+ | 8 | Event dengan genre_id yang tidak ada | `POST /api/events` `genre_id: 999` | `404` |
+ | 9 | Venue tidak ada saat buat event | `POST /api/events` `venue_id: 999` | `404` |
+ | 10 | Validasi gagal - register tanpa username | `POST /api/auth/register` body tidak lengkap | `400` + field errors |
+ | 11 | Validasi gagal - event waktu_event invalid | `POST /api/events` waktu_event salah format | `400` + field errors |
+ | 12 | Validasi gagal - seat_ids array kosong | `POST /api/seats/lock` `{"seat_ids":[]}` | `400` + field errors |
+ | 13 | Rate limit - spam login | 11x `POST /api/auth/login` < 15 menit | `429` |
+ | 14 | Rate limit - spam seat lock | 21x `POST /api/seats/lock` < 5 menit | `429` |
+ | 15 | Rate limit - spam scanner check-in | 31x `POST /api/scanner/check-in` < 1 menit | `429` |
+ | 16 | Scanner check-in tiket tidak ditemukan | `POST /api/scanner/check-in` kode_unik invalid | `404` |
+ | 17 | Scanner check-in tiket sudah dipindai | `POST /api/scanner/check-in` kode_unik sudah scan | `409` |
+ | 18 | Scanner check-in event sudah berakhir | `POST /api/scanner/check-in` event completed | `409` |
+ | 19 | Scanner non-scanner akses check-in | `POST /api/scanner/check-in` token customer | `403` |
 
 ---
 

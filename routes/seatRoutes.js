@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const seatsController = require('../controllers/seatsController');
 const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
+const { validate } = require('../middleware/validationMiddleware');
+const { generateSeatsSchema, lockSeatsSchema, unlockSeatsSchema } = require('../validators/seatValidator');
 
 // Lihat kursi per kategori (Publik / Customer bisa akses)
 // GET /api/seats?kategori_id=
@@ -12,6 +14,7 @@ router.post(
   '/generate',
   verifyToken,
   authorizeRoles('Admin', 'SuperAdmin'),
+  validate(generateSeatsSchema),
   seatsController.generateSeats
 );
 
@@ -20,6 +23,7 @@ router.post(
   '/lock',
   verifyToken,
   authorizeRoles('Customer', 'Admin', 'SuperAdmin'),
+  validate(lockSeatsSchema),
   seatsController.lockSeats
 );
 
@@ -28,6 +32,7 @@ router.post(
   '/unlock',
   verifyToken,
   authorizeRoles('Customer', 'Admin', 'SuperAdmin'),
+  validate(unlockSeatsSchema),
   seatsController.unlockSeats
 );
 

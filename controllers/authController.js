@@ -17,7 +17,7 @@ const authController = {
         });
       }
 
-      const assignedRole = role || 'Customer';
+      const assignedRole = role || 'Scanner';
       if (!VALID_ROLES.includes(assignedRole)) {
         return res.status(400).json({
           success: false,

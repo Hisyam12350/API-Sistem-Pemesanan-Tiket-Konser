@@ -2,11 +2,14 @@ const express = require('express');
 const router = express.Router();
 const ordersController = require('../controllers/ordersController');
 const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
+const { validate } = require('../middleware/validationMiddleware');
+const { createOrderSchema } = require('../validators/orderValidator');
 
 router.post(
   '/',
   verifyToken,
   authorizeRoles('Customer', 'Admin', 'SuperAdmin'),
+  validate(createOrderSchema),
   ordersController.createOrder
 );
 

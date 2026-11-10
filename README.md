@@ -1,39 +1,42 @@
 # 🎫 API Pemesanan Tiket Konser
-
-Backend REST API untuk sistem **pemesanan tiket konser** — dibangun dengan **Node.js + Express** dan database **Supabase (PostgreSQL)**. API ini menangani autentikasi multi-role, manajemen event, kategori tiket, hingga alur pemesanan dan check-in tiket.
-
-> Proyek ini merupakan bagian dari ekosistem 3 aplikasi: **API** (backend), **web-tiket-konser** (Next.js), dan **mobile-tiket-konser** (Expo/React Native).
-
----
-
-## ✨ Fitur yang Sudah Berjalan
-
-- **Autentikasi & Otorisasi** — Register, Login (JWT), dan profil user.
-- **Multi-Role** — `SuperAdmin`, `Admin`, `Customer`, `Scanner` dengan kontrol akses per endpoint.
-- **Manajemen Event** — CRUD event + upload banner ke Supabase Storage + relasi venue (Step 1–2: pilih tempat lalu isi detail).
-- **Venue & Tempat Event** — Master tipe tempat (Stadion/Indoor/Outdoor/Lapangan), daftar venue dengan filter kategori + search + pagination, input alamat secara manual oleh admin.
-- **Kategori Tiket** — CRUD kategori tiket per event (harga, kuota) dengan tracking kuota otomatis.
-- **Kursi & Seat Locking** — Generate kursi massal per kategori, lock kursi sementara (anti rebutan), dan unlock.
-- **Orders / Checkout** — Buat order dari kursi terkunci, batalkan order pending, pembayaran via **Midtrans Snap** (gateway).
-- **Keamanan** — Password di-hash dengan bcrypt, token JWT, validasi input.
-
-### 🚧 Sedang Dikembangkan (Roadmap)
-- E-Ticket + QR Code
-- Check-in / Scan tiket (role Scanner)
-
----
-
-## 🧱 Teknologi
-
-| Komponen | Teknologi |
-|---|---|
-| Runtime | Node.js |
-| Framework | Express 5 |
-| Database | PostgreSQL (Supabase) |
-| Akses DB | `@supabase/supabase-js` & `pg` (Pool) |
-| Auth | JWT (`jsonwebtoken`) + `bcryptjs` |
-| Upload File | `multer` → Supabase Storage |
-| Konfigurasi | `dotenv` |
+ 
+ Backend REST API untuk sistem **pemesanan tiket konser** — dibangun dengan **Node.js + Express** dan database **Supabase (PostgreSQL)**. API ini menangani autentikasi multi-role, manajemen event, kategori tiket, hingga alur pemesanan dan check-in tiket.
+ 
+ > Proyek ini merupakan bagian dari ekosistem 3 aplikasi: **API** (backend), **web-tiket-konser** (Next.js), dan **mobile-tiket-konser** (Expo/React Native).
+ 
+ ---
+ 
+ ## ✨ Fitur yang Sudah Berjalan
+ 
+ - **Autentikasi & Otorisasi** — Register, Login (JWT), dan profil user.
+ - **Multi-Role** — `SuperAdmin`, `Admin`, `Customer`, `Scanner` dengan kontrol akses per endpoint.
+ - **Manajemen Event** — CRUD event + upload banner ke Supabase Storage + relasi venue (Step 1–2: pilih tempat lalu isi detail).
+ - **Venue & Tempat Event** — Master tipe tempat (Stadion/Indoor/Outdoor/Lapangan), daftar venue dengan filter kategori + search + pagination, input alamat secara manual oleh admin.
+ - **Kategori Tiket** — CRUD kategori tiket per event (harga, kuota) dengan tracking kuota otomatis.
+ - **Kursi & Seat Locking** — Generate kursi massal per kategori, lock kursi sementara (anti rebutan), dan unlock.
+ - **Orders / Checkout** — Buat order dari kursi terkunci, batalkan order pending, pembayaran via **Midtrans Snap** (gateway).
+ - **Scanner / Check-in** — QR Code check-in tiket, daftar tiket yang dipindai per scanner & per event (role Scanner).
+ - **Keamanan** — Password di-hash dengan bcrypt, token JWT, **validasi input Zod**, **rate limiting**, **validasi environment startup**.
+ 
+ ### 🚧 Sedang Dikembangkan (Roadmap)
+ - E-Ticket + QR Code (sudah ada generator di backend, perlu integrasi frontend)
+ 
+ ---
+ 
+ ## 🧱 Teknologi
+ 
+ | Komponen | Teknologi |
+ |---|---|
+ | Runtime | Node.js |
+ | Framework | Express 5 |
+ | Database | PostgreSQL (Supabase) |
+ | Akses DB | `@supabase/supabase-js` & `pg` (Pool) |
+ | Auth | JWT (`jsonwebtoken`) + `bcryptjs` |
+ | Validasi | **Zod** |
+ | Rate Limiting | **express-rate-limit** |
+ | QR Code | **qrcode** |
+ | Upload File | `multer` → Supabase Storage |
+ | Konfigurasi | `dotenv` |
 
 ---
 
@@ -108,14 +111,15 @@ cd API
 npm install
 ```
 
-### 2. Setup Database
-1. Buka proyek Supabase Anda → **SQL Editor**.
-2. Jalankan isi file `config/schema.sql` untuk membuat seluruh tabel, enum, dan trigger.
-3. Jika sudah pernah setup sebelumnya, jalankan migration terbaru secara berurutan:
-`config/migrations/001_add_order_item_seats.sql` lalu
-    `config/migrations/002_venues_google_places.sql` lalu
-    `config/migrations/003_add_locked_by_to_seats.sql` lalu
-    `config/migrations/004_payments_midtrans.sql`
+### 3. Setup Database
+ 1. Buka proyek Supabase Anda → **SQL Editor**.
+ 2. Jalankan isi file `config/schema.sql` untuk membuat seluruh tabel, enum, dan trigger.
+ 3. Jika sudah pernah setup sebelumnya, jalankan migration terbaru secara berurutan:
+ `config/migrations/001_add_order_item_seats.sql` lalu
+     `config/migrations/002_venues_google_places.sql` lalu
+     `config/migrations/003_add_locked_by_to_seats.sql` lalu
+     `config/migrations/004_payments_midtrans.sql` lalu
+     `config/migrations/005_scanner_indexes.sql`
 
 ### 3. Konfigurasi Environment
 Salin contoh berikut ke file `.env` di root proyek, lalu isi dengan kredensial Supabase Anda:
@@ -236,12 +240,26 @@ Base URL: `/api`
 > **Catatan Orders:** `batas_waktu_bayar = NOW() + 15 menit`. Kursi tetap `locked` setelah checkout; trigger DB membebaskan kursi pada `expired`/`cancelled`; pembayaran via gateway mengubah kursi menjadi `booked`. Kolom `cutsomer_id` (typo) dipakai literal sesuai schema.
 
 ### 💳 Payment Gateway (Midtrans Snap)
-
-| Method | Endpoint | Akses | Keterangan |
-|---|---|---|---|
-| POST | `/api/payments/:orderId/create` | Customer/Admin/SuperAdmin | Buat transaksi Snap, kembalikan `snap_token` & `redirect_url` |
-| GET | `/api/payments/:orderId` | Customer/Admin/SuperAdmin | Status pembayaran + riwayat + tiket |
-| POST | `/api/payments/notification` | **Publik** (tanpa token) | Webhook Midtrans — signature SHA512, idempotent |
+ 
+ | Method | Endpoint | Akses | Keterangan |
+ |---|---|---|---|
+ | POST | `/api/payments/:orderId/create` | Customer/Admin/SuperAdmin | Buat transaksi Snap, kembalikan `snap_token` & `redirect_url` |
+ | GET | `/api/payments/:orderId` | Customer/Admin/SuperAdmin | Status pembayaran + riwayat + tiket |
+ | POST | `/api/payments/notification` | **Publik** (tanpa token) | Webhook Midtrans — signature SHA512, idempotent |
+ 
+ ### 📱 Scanner / Check-in
+ 
+ | Method | Endpoint | Akses | Keterangan |
+ |---|---|---|---|
+ | POST | `/api/scanner/check-in` | Scanner/Admin/SuperAdmin | Scan QR code, validasi, update tiket. Body: `{ "kode_unik": "TKT-1-5-ABC123" }` |
+ | GET | `/api/scanner/scanned-tickets` | Scanner/Admin/SuperAdmin | Daftar tiket yang dipindai oleh scanner ini |
+ | GET | `/api/scanner/events/:eventId/scanned` | Scanner/Admin/SuperAdmin | Daftar semua tiket dipindai untuk event tertentu |
+ 
+ > **Catatan Scanner:**
+ > - QR Code berisi `kode_unik` tiket (format: `TKT-{event_id}-{kategori_id}-{random}`)
+ > - Backend menyediakan generator QR SVG/PNG via `utils/qrCodeGenerator.js`
+ > - Spesifikasi lengkap untuk frontend: `docs/QR_CODE_SPEC.md`
+ > - Rate limit: 30 request/menit per IP di `/api/scanner/check-in`
 
 > **Catatan Payment Gateway:**
 > - `snap_token` digunakan frontend untuk membuka halaman pembayaran Midtrans (Snap.js / redirect).
@@ -306,19 +324,36 @@ API/
 │   ├── venues.js                  # Model tabel venues
 │   └── genres.js                  # Model tabel genres
 ├── routes/                        # Definisi endpoint per resource
-│   ├── authRoutes.js              # POST /register, /login, GET /me
-│   ├── userRoutes.js              # CRUD user (admin)
-│   ├── eventRoutes.js             # CRUD event (admin)
-│   ├── ticketCategoryRoutes.js    # CRUD kategori tiket (admin)
-│   ├── seatRoutes.js              # Generate, lock, unlock kursi
-│   ├── orderRoutes.js             # Buat, list, detail, cancel order
-│   ├── paymentRoutes.js           # POST /create, GET /:id, POST /notification
-│   ├── venueTypeRoutes.js         # GET/POST/DELETE /api/venue-types
-│   ├── venueRoutes.js             # GET/POST/PUT/DELETE /api/venues
-│   ├── genreRoutes.js             # GET/POST/PUT/DELETE /api/genres
-├── utils/                         # Utilitas & helper
-│   ├── storageService.js          # Upload/hapus file ke Supabase Storage
-│   └── midtransService.js         # Midtrans Snap: createTransaction, verifySignature, mapStatus
+ │   ├── authRoutes.js              # POST /register, /login, GET /me
+ │   ├── userRoutes.js              # CRUD user (admin)
+ │   ├── eventRoutes.js             # CRUD event (admin)
+ │   ├── ticketCategoryRoutes.js    # CRUD kategori tiket (admin)
+ │   ├── seatRoutes.js              # Generate, lock, unlock kursi
+ │   ├── orderRoutes.js             # Buat, list, detail, cancel order
+ │   ├── paymentRoutes.js           # POST /create, GET /:id, POST /notification
+ │   ├── venueTypeRoutes.js         # GET/POST/DELETE /api/venue-types
+ │   ├── venueRoutes.js             # GET/POST/PUT/DELETE /api/venues
+ │   ├── genreRoutes.js             # GET/POST/PUT/DELETE /api/genres
+ │   └── scannerRoutes.js           # POST /check-in, GET /scanned-tickets, GET /events/:id/scanned
+ ├── validators/                    # Zod schema validasi input
+ │   ├── authValidator.js
+ │   ├── eventValidator.js
+ │   ├── venueValidator.js
+ │   ├── genreValidator.js
+ │   ├── ticketCategoryValidator.js
+ │   ├── seatValidator.js
+ │   ├── orderValidator.js
+ │   ├── paymentValidator.js
+ │   └── scannerValidator.js
+ ├── middleware/
+ │   ├── authMiddleware.js          # verifyToken & authorizeRoles
+ │   ├── uploadMiddleware.js        # Konfigurasi multer (upload gambar)
+ │   ├── validationMiddleware.js    # Generic validate(schema) middleware
+ │   └── rateLimiter.js             # express-rate-limit configs (global + per-endpoint)
+ ├── utils/                         # Utilitas & helper
+ │   ├── storageService.js          # Upload/hapus file ke Supabase Storage
+ │   ├── midtransService.js         # Midtrans Snap: createTransaction, verifySignature, mapStatus
+ │   └── qrCodeGenerator.js         # Generate QR Code (SVG/PNG/DataURL) dari kode_unik
 ├── app.js                         # Entry point aplikasi
 └── package.json
 ```
@@ -385,18 +420,21 @@ curl -X GET http://localhost:5000/api/payments/1 \
 ---
 
 ## ⚠️ Catatan Penting
-
-- **`JWT_SECRET` wajib diset** di `.env`. Fallback default hanya untuk development — jangan dipakai di produksi.
-- Jalankan **migration terbaru secara berurutan** (`001_add_order_item_seats.sql`, `002_venues_google_places.sql`, `003_add_locked_by_to_seats.sql`, `004_payments_midtrans.sql`) agar tabel `order_item_seats`, `venue_types`, `venues`, `locked_by`, `payments` (kolom Snap), dan trigger terbaru tersedia.
-- **Jangan commit file `.env`** ke repository (pastikan sudah masuk `.gitignore`).
-- Kolom `orders` menggunakan nama `cutsomer_id` (typo) — perhatikan saat query.
-- **Midtrans Payment Gateway:**
-  - `MIDTRANS_SERVER_KEY` **harus** diisi dengan Server Key valid dari dashboard Midtrans Sandbox/Production.
-  - `MIDTRANS_SIGNATURE_KEY` (opsional) — fallback key khusus untuk verifikasi signature webhook; jika tidak diisi, fallback ke `MIDTRANS_SERVER_KEY`.
-  - Webhook endpoint `/api/payments/notification` **harus bisa diakses dari internet** (production) atau gunakan tunneling (ngrok/localtunnel) untuk development.
-  - Signature webhook diverifikasi dengan `SHA512(order_id + status_code + gross_amount + server_key)` — dicocokkan dengan `signature_key` dari Midtrans; fallback HMAC-SHA512 juga didukung.
-  - Webhook bersifat **idempotent** — pengiriman ulang `settlement` tidak menghasilkan tiket duplikat.
-  - Pastikan `MIDTRANS_SERVER_KEY` di `.env` **sama persis** dengan Server Key di dashboard Midtrans,否则 webhook signature akan gagal (403).
+ 
+ - **`JWT_SECRET` wajib diset** di `.env`. Fallback default hanya untuk development — jangan dipakai di produksi.
+ - Jalankan **migration terbaru secara berurutan** (`001_add_order_item_seats.sql`, `002_venues_google_places.sql`, `003_add_locked_by_to_seats.sql`, `004_payments_midtrans.sql`, `005_scanner_indexes.sql`) agar tabel `order_item_seats`, `venue_types`, `venues`, `locked_by`, `payments` (kolom Snap), `tickets` indexes scanner, dan trigger terbaru tersedia.
+ - **Jangan commit file `.env`** ke repository (pastikan sudah masuk `.gitignore`).
+ - Kolom `orders` menggunakan nama `cutsomer_id` (typo) — perhatikan saat query.
+ - **Validasi Input (Zod):** Semua endpoint POST/PUT sekarang divalidasi via Zod schema. Error response 400 dengan detail field: `{ success: false, message: "Validasi gagal", errors: { field: ["pesan error"] } }`.
+ - **Rate Limiting:** Global 100 req/15menit per IP. Endpoint kritis: auth 10/15m, seat lock 20/5m, payment create 10/5m, seat generate 10/1jam, scanner check-in 30/1menit.
+ - **Validasi Environment:** Startup check 5 env wajib (`JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `DATABASE_URL`, `MIDTRANS_SERVER_KEY`) — warning non-blocking.
+ - **Midtrans Payment Gateway:**
+   - `MIDTRANS_SERVER_KEY` **harus** diisi dengan Server Key valid dari dashboard Midtrans Sandbox/Production.
+   - `MIDTRANS_SIGNATURE_KEY` (opsional) — fallback key khusus untuk verifikasi signature webhook; jika tidak diisi, fallback ke `MIDTRANS_SERVER_KEY`.
+   - Webhook endpoint `/api/payments/notification` **harus bisa diakses dari internet** (production) atau gunakan tunneling (ngrok/localtunnel) untuk development.
+   - Signature webhook diverifikasi dengan `SHA512(order_id + status_code + gross_amount + server_key)` — dicocokkan dengan `signature_key` dari Midtrans; fallback HMAC-SHA512 juga didukung.
+   - Webhook bersifat **idempotent** — pengiriman ulang `settlement` tidak menghasilkan tiket duplikat.
+   - Pastikan `MIDTRANS_SERVER_KEY` di `.env` **sama persis** dengan Server Key di dashboard Midtrans,否则 webhook signature akan gagal (403).
 
 ---
 

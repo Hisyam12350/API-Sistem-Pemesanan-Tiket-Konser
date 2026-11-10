@@ -1,6 +1,11 @@
 require('dotenv').config();
+const { validateEnv } = require('./config/envValidation');
+validateEnv();
+
 const express = require('express');
 const cors = require('cors');
+
+const { globalLimiter, authLimiter, seatLockLimiter, paymentCreateLimiter, seatGenerateLimiter, scannerCheckInLimiter } = require('./middleware/rateLimiter');
 
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
@@ -12,9 +17,21 @@ const paymentRoutes = require('./routes/paymentRoutes');
 const venueTypeRoutes = require('./routes/venueTypeRoutes');
 const venueRoutes = require('./routes/venueRoutes');
 const genreRoutes = require('./routes/genreRoutes');
+const scannerRoutes = require('./routes/scannerRoutes');
 
 const app = express();
 const port = process.env.PORT || 5000;
+
+// Global Rate Limiter
+app.use(globalLimiter);
+
+// Specific Rate Limiters (MUST be before route registration to take effect)
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
+app.use('/api/seats/lock', seatLockLimiter);
+app.use('/api/payments/:orderId/create', paymentCreateLimiter);
+app.use('/api/seats/generate', seatGenerateLimiter);
+app.use('/api/scanner/check-in', scannerCheckInLimiter);
 
 // Middleware Global
 app.use(cors());
@@ -41,6 +58,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/venue-types', venueTypeRoutes);
 app.use('/api/venues', venueRoutes);
 app.use('/api/genres', genreRoutes);
+app.use('/api/scanner', scannerRoutes);
 
 // Handling Route 404 (Not Found)
 app.use((req, res) => {
