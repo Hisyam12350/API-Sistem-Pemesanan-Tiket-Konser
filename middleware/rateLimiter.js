@@ -40,12 +40,28 @@ const seatGenerateLimiter = rateLimit({
   message: { success: false, message: 'Terlalu banyak request generate kursi, coba lagi nanti' }
 });
 
-const scannerCheckInLimiter = rateLimit({
+const orderLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Terlalu banyak pembuatan order, coba lagi nanti' }
+});
+
+const uploadLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Terlalu banyak upload file, coba lagi nanti' }
+});
+
+const scannerLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { success: false, message: 'Terlalu banyak percobaan scan, coba lagi nanti' }
+  message: { success: false, message: 'Terlalu banyak percobaan scan, coba lagi sebentar' }
 });
 
 module.exports = {
@@ -54,5 +70,7 @@ module.exports = {
   seatLockLimiter,
   paymentCreateLimiter,
   seatGenerateLimiter,
-  scannerCheckInLimiter
+  orderLimiter,
+  uploadLimiter,
+  scannerLimiter
 };

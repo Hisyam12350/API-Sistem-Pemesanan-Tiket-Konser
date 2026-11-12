@@ -17,7 +17,14 @@ const authController = {
         });
       }
 
-      const assignedRole = role || 'Scanner';
+      if (role && (role === 'SuperAdmin' || role === 'Admin')) {
+        return res.status(403).json({
+          success: false,
+          message: 'Role Admin/SuperAdmin tidak dapat didaftarkan melalui registrasi publik.'
+        });
+      }
+
+      const assignedRole = role || 'Customer';
       if (!VALID_ROLES.includes(assignedRole)) {
         return res.status(400).json({
           success: false,
@@ -68,7 +75,7 @@ const authController = {
         data: newUser
       });
     } catch (error) {
-      console.error('Error on register:', error);
+      console.error('Error on register:', error.message);
       return res.status(500).json({
         success: false,
         message: 'Terjadi kesalahan pada server saat registrasi.',
@@ -127,7 +134,7 @@ const authController = {
         }
       });
     } catch (error) {
-      console.error('Error on login:', error);
+      console.error('Error on login:', error.message);
       return res.status(500).json({
         success: false,
         message: 'Terjadi kesalahan pada server saat login.',
@@ -153,7 +160,7 @@ const authController = {
         data: user
       });
     } catch (error) {
-      console.error('Error on getProfile:', error);
+      console.error('Error on getProfile:', error.message);
       return res.status(500).json({
         success: false,
         message: 'Terjadi kesalahan pada server saat mengambil profil.',

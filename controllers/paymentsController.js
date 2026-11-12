@@ -1,8 +1,8 @@
 const Payment = require('../models/payments.js');
 const Order = require('../models/orders.js');
 const userModel = require('../models/userModel.js');
-const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
 const { createTransaction, getTransactionStatus, verifySignature, mapStatus } = require('../utils/midtransService.js');
+const { logger } = require('../utils/logger.js');
 
 function mapError(error, res) {
   if (error && error.status) {
@@ -118,13 +118,13 @@ const paymentsController = {
       const serverKey = process.env.MIDTRANS_SERVER_KEY || '';
       const { order_id, status_code, gross_amount, signature_key, transaction_status } = body;
 
-      console.log('[MIDTRANS_WEBHOOK] body:', JSON.stringify(body));
-      console.log('[MIDTRANS_WEBHOOK] serverKey present:', Boolean(serverKey), 'isProduction:', process.env.MIDTRANS_IS_PRODUCTION === 'true');
+      logger.info('[MIDTRANS_WEBHOOK] body:', JSON.stringify(body));
+      logger.info('[MIDTRANS_WEBHOOK] serverKey present:', Boolean(serverKey), 'isProduction:', process.env.MIDTRANS_IS_PRODUCTION === 'true');
 
       let isValid = verifySignature({ order_id, status_code, gross_amount, signature_key });
 
       if (!isValid) {
-        console.log('[MIDTRANS_WEBHOOK] Signature lokal mismatch, memverifikasi langsung ke Midtrans API...');
+        logger.info('[MIDTRANS_WEBHOOK] Signature lokal mismatch, memverifikasi langsung ke Midtrans API...');
         try {
           const midtransData = await getTransactionStatus(order_id);
           if (
@@ -132,14 +132,14 @@ const paymentsController = {
             midtransData.order_id === order_id &&
             Number(midtransData.gross_amount) === Number(gross_amount)
           ) {
-            console.log('[MIDTRANS_WEBHOOK] Verifikasi via Midtrans API BERHASIL:', {
+            logger.info('[MIDTRANS_WEBHOOK] Verifikasi via Midtrans API BERHASIL:', {
               transaction_status: midtransData.transaction_status,
               status_code: midtransData.status_code
             });
             isValid = true;
           }
         } catch (apiErr) {
-          console.error('[MIDTRANS_WEBHOOK] Verifikasi Midtrans API gagal:', apiErr.message);
+          logger.error('[MIDTRANS_WEBHOOK] Verifikasi Midtrans API gagal:', apiErr.message);
         }
       }
 
@@ -148,33 +148,33 @@ const paymentsController = {
           .createHash('sha512')
           .update(String(order_id) + String(status_code) + String(gross_amount) + serverKey)
           .digest('hex');
-        console.log('[MIDTRANS_WEBHOOK] signature invalid:', { order_id, status_code, gross_amount, signature_key, computed });
+        logger.info('[MIDTRANS_WEBHOOK] signature invalid:', { order_id, status_code, gross_amount, signature_key, computed });
         return res.status(403).json({ success: false, message: 'Signature tidak valid.' });
       }
 
       const payment = await Payment.findByTransactionId(order_id);
       if (!payment) {
-        console.log('[MIDTRANS_WEBHOOK] payment not found for order_id:', order_id);
+        logger.info('[MIDTRANS_WEBHOOK] payment not found for order_id:', order_id);
         return res.status(404).json({ success: false, message: 'Payment tidak ditemukan.' });
       }
 
-      console.log('[MIDTRANS_WEBHOOK] payment found:', { paymentId: payment.id, orderId: payment.order_id, status: payment.status, amount: payment.amount });
+      logger.info('[MIDTRANS_WEBHOOK] payment found:', { paymentId: payment.id, orderId: payment.order_id, status: payment.status, amount: payment.amount });
 
       const { order } = await Payment.getOrderWithItems(payment.order_id);
       if (!order) {
-        console.log('[MIDTRANS_WEBHOOK] order not found for paymentId:', payment.id);
+        logger.info('[MIDTRANS_WEBHOOK] order not found for paymentId:', payment.id);
         return res.status(404).json({ success: false, message: 'Order tidak ditemukan.' });
       }
 
-      console.log('[MIDTRANS_WEBHOOK] order:', { orderId: order.id, status_order: order.status_order, total_pembayaran: order.total_pembayaran, batas_waktu_bayar: order.batas_waktu_bayar, gross_amount });
+      logger.info('[MIDTRANS_WEBHOOK] order:', { orderId: order.id, status_order: order.status_order, total_pembayaran: order.total_pembayaran, batas_waktu_bayar: order.batas_waktu_bayar, gross_amount });
 
       if (Number(gross_amount) !== Number(order.total_pembayaran)) {
-        console.log('[MIDTRANS_WEBHOOK] amount mismatch:', { gross_amount, total_pembayaran: order.total_pembayaran });
+        logger.info('[MIDTRANS_WEBHOOK] amount mismatch:', { gross_amount, total_pembayaran: order.total_pembayaran });
         return res.status(400).json({ success: false, message: 'Gross amount tidak sesuai.' });
       }
 
       const newStatus = mapStatus(transaction_status);
-      console.log('[MIDTRANS_WEBHOOK] mapped status:', { transaction_status, newStatus });
+      logger.info('[MIDTRANS_WEBHOOK] mapped status:', { transaction_status, newStatus });
 
       // idempotent success
       if (payment.status === 'success' && order.status_order === 'paid') {
@@ -221,7 +221,7 @@ const paymentsController = {
 
       return res.status(200).json({ success: true, message: 'Notifikasi diproses.' });
     } catch (error) {
-      console.error('[MIDTRANS_WEBHOOK] error:', error);
+      logger.error('[MIDTRANS_WEBHOOK] error:', error);
       return res.status(500).json({ success: false, error: error.message });
     }
   },
@@ -268,7 +268,7 @@ const paymentsController = {
               pendingPayment.status = 'success';
             }
           } catch (syncErr) {
-            console.log('[GET_PAYMENT_SYNC] Midtrans check skipped/error:', syncErr.message);
+            logger.info('[GET_PAYMENT_SYNC] Midtrans check skipped/error:', syncErr.message);
           }
         }
       }

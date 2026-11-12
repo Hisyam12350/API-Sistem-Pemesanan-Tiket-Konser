@@ -2,10 +2,6 @@ const Venue = require('../models/venues.js');
 const VenueType = require('../models/venueTypes.js');
 const storageService = require('../utils/storageService');
 
-function toStatusCode(error, fallback = 500) {
-  return Number.isInteger(error.statusCode) ? error.statusCode : fallback;
-}
-
 const venuesController = {
   getVenues: async (req, res) => {
     try {

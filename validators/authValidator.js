@@ -14,7 +14,5 @@ const loginSchema = z.object({
 
 module.exports = {
   registerSchema,
-  loginSchema,
-  createUserSchema: registerSchema,
-  updateUserSchema: registerSchema.partial()
+  loginSchema
 };

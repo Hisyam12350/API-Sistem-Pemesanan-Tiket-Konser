@@ -5,6 +5,7 @@ const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
 const upload = require('../middleware/uploadMiddleware');
 const { validate } = require('../middleware/validationMiddleware');
 const { createEventSchema, updateEventSchema } = require('../validators/eventValidator');
+const { uploadLimiter } = require('../middleware/rateLimiter');
 
 // Get all events & Get event by ID (Publik / Customer bisa akses)
 router.get('/', eventController.getAllEvents);
@@ -16,6 +17,7 @@ router.post(
   verifyToken,
   authorizeRoles('Admin', 'SuperAdmin'),
   upload.single('banner'),
+  uploadLimiter,
   validate(createEventSchema),
   eventController.createEvents
 );
@@ -25,6 +27,7 @@ router.put(
   verifyToken,
   authorizeRoles('Admin', 'SuperAdmin'),
   upload.single('banner'),
+  uploadLimiter,
   validate(updateEventSchema),
   eventController.updateEvents
 );

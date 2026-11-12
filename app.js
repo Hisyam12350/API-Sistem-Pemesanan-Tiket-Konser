@@ -3,9 +3,9 @@ const { validateEnv } = require('./config/envValidation');
 validateEnv();
 
 const express = require('express');
-const cors = require('cors');
 
-const { globalLimiter, authLimiter, seatLockLimiter, paymentCreateLimiter, seatGenerateLimiter, scannerCheckInLimiter } = require('./middleware/rateLimiter');
+const { globalLimiter, authLimiter, seatLockLimiter, paymentCreateLimiter, seatGenerateLimiter } = require('./middleware/rateLimiter');
+const corsMiddleware = require('./middleware/corsMiddleware');
 
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
@@ -18,6 +18,10 @@ const venueTypeRoutes = require('./routes/venueTypeRoutes');
 const venueRoutes = require('./routes/venueRoutes');
 const genreRoutes = require('./routes/genreRoutes');
 const scannerRoutes = require('./routes/scannerRoutes');
+const ticketRoutes = require('./routes/ticketRoutes');
+
+const { logger, loggerMiddleware } = require('./utils/logger');
+const helmetMiddleware = require('./middleware/helmetMiddleware');
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -31,12 +35,14 @@ app.use('/api/auth/register', authLimiter);
 app.use('/api/seats/lock', seatLockLimiter);
 app.use('/api/payments/:orderId/create', paymentCreateLimiter);
 app.use('/api/seats/generate', seatGenerateLimiter);
-app.use('/api/scanner/check-in', scannerCheckInLimiter);
 
 // Middleware Global
-app.use(cors());
+app.use(loggerMiddleware);
+app.use(corsMiddleware());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// Security headers
+app.use(helmetMiddleware);
 
 // Rute Dasar / Health Check
 app.get('/', (req, res) => {
@@ -59,6 +65,7 @@ app.use('/api/venue-types', venueTypeRoutes);
 app.use('/api/venues', venueRoutes);
 app.use('/api/genres', genreRoutes);
 app.use('/api/scanner', scannerRoutes);
+app.use('/api/tickets', ticketRoutes);
 
 // Handling Route 404 (Not Found)
 app.use((req, res) => {
@@ -70,7 +77,7 @@ app.use((req, res) => {
 
 // Handling Global Error
 app.use((err, req, res, next) => {
-  console.error('Unhandled Error:', err);
+  console.error('Unhandled Error:', err.message, err.stack);
   res.status(500).json({
     success: false,
     message: 'Terjadi kesalahan pada server.',
@@ -78,7 +85,12 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(port, '0.0.0.0', () => {
-  console.log(`API Tiket Konser UKK berjalan di http://localhost:${port}`);
-  console.log(`Akses dari emulator: http://10.0.2.2:${port}`);
-});
+// Only start server when run directly (not when required for testing)
+if (require.main === module) {
+  app.listen(port, '0.0.0.0', () => {
+    logger.info('Server started on port %s', port);
+    logger.info('Akses dari emulator: http://10.0.2.2:%s', port);
+  });
+}
+
+module.exports = app;

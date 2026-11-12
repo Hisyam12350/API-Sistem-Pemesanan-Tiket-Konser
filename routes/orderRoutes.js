@@ -4,11 +4,13 @@ const ordersController = require('../controllers/ordersController');
 const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validationMiddleware');
 const { createOrderSchema } = require('../validators/orderValidator');
+const { orderLimiter } = require('../middleware/rateLimiter');
 
 router.post(
   '/',
   verifyToken,
   authorizeRoles('Customer', 'Admin', 'SuperAdmin'),
+  orderLimiter,
   validate(createOrderSchema),
   ordersController.createOrder
 );

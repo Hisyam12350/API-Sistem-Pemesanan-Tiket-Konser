@@ -138,54 +138,6 @@ const Order = {
     return { order, items };
   },
 
-  async payOrder(id, userId, role) {
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query("UPDATE orders SET status_order='expired' WHERE status_order='pending' AND batas_waktu_bayar < NOW();");
-
-      const result = await client.query('SELECT ' + ORDER_COLUMNS + ' FROM orders WHERE id = $1', [id]);
-      if (result.rows.length === 0) {
-        const err = new Error('Order tidak ditemukan.');
-        err.status = 404;
-        throw err;
-      }
-      const order = result.rows[0];
-      const isAdmin = role === 'Admin' || role === 'SuperAdmin';
-      if (!isAdmin && Number(order.cutsomer_id) !== Number(userId)) {
-        const err = new Error('Akses ditolak.');
-        err.status = 403;
-        throw err;
-      }
-      if (order.status_order !== 'pending') {
-        const err = new Error('Hanya order pending yang dapat dibayar.');
-        err.status = 409;
-        throw err;
-      }
-
-      await client.query("UPDATE orders SET status_order='paid' WHERE id = $1", [id]);
-      await client.query(
-        `UPDATE seats SET status_kursi='booked', locked_until=NULL, locked_by=NULL
-         FROM order_item_seats ois
-         JOIN order_items oi ON oi.id = ois.order_item_id
-         WHERE ois.seat_id = seats.id AND oi.order_id = $1`,
-        [id]
-      );
-      await client.query(
-        'INSERT INTO payments (order_id, payment_method, amount, status) VALUES ($1, $2, $3, $4)',
-        [id, 'manual', order.total_pembayaran, 'success']
-      );
-
-      await client.query('COMMIT');
-      return { ...order, status_order: 'paid' };
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
-  },
-
   async cancelOrder(id, userId, role) {
     await expireOverdueOrders();
     const result = await pool.query('SELECT ' + ORDER_COLUMNS + ' FROM orders WHERE id = $1', [id]);

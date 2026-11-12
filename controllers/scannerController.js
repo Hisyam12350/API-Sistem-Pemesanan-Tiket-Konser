@@ -1,5 +1,6 @@
 const supabase = require('../config/supabase');
 const pool = require('../config/db');
+const { logger } = require('../utils/logger');
 
 const scannerController = {
   async checkIn(req, res) {
@@ -86,7 +87,7 @@ const scannerController = {
         .single();
 
       if (updateError) {
-        console.error('Error updating ticket:', updateError);
+        logger.error({ error: updateError.message, stack: updateError.stack }, 'Error updating ticket');
         return res.status(500).json({
           success: false,
           message: 'Gagal memperbarui status tiket.'
@@ -122,7 +123,7 @@ const scannerController = {
         }
       });
     } catch (error) {
-      console.error('Error in checkIn:', error);
+      logger.error({ error: error.message, stack: error.stack }, 'Error in checkIn');
       return res.status(500).json({
         success: false,
         message: 'Terjadi kesalahan pada server.',
@@ -216,7 +217,7 @@ const scannerController = {
         }
       });
     } catch (error) {
-      console.error('Error in getScannedTickets:', error);
+      logger.error({ error: error.message, stack: error.stack }, 'Error in getScannedTickets');
       return res.status(500).json({
         success: false,
         message: 'Terjadi kesalahan pada server.',
@@ -312,7 +313,7 @@ const scannerController = {
         }
       });
     } catch (error) {
-      console.error('Error in getEventScannedTickets:', error);
+      logger.error({ error: error.message, stack: error.stack }, 'Error in getEventScannedTickets');
       return res.status(500).json({
         success: false,
         message: 'Terjadi kesalahan pada server.',

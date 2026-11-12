@@ -16,7 +16,7 @@ const authMiddleware = {
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
       req.user = decoded;
-      next();
+      next(); // <-- Penting: panggil next setelah set req.user
     } catch (error) {
       return res.status(401).json({
         success: false,

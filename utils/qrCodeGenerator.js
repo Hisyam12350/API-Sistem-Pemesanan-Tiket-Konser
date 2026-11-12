@@ -1,49 +1,46 @@
 const QRCode = require('qrcode');
 
-async function generateQRCodeSVG(kodeUnik, options = {}) {
-  const defaultOptions = {
+// Generate SVG string (untuk embed di HTML/e-ticket) - async
+async function generateSVG(kodeUnik, options = {}) {
+  return QRCode.toString(kodeUnik, {
     type: 'svg',
     errorCorrectionLevel: 'M',
-    margin: 4,
-    width: 300,
+    width: options.width || 300,
+    height: options.height || 300,
     color: {
-      dark: '#000000',
-      light: '#ffffff'
-    }
-  };
-  return QRCode.toString(kodeUnik, { ...defaultOptions, ...options });
+      dark: options.darkColor || '#1a1a1a',
+      light: options.lightColor || '#ffffff'
+    },
+    margin: options.margin || 2
+  });
 }
 
-async function generateQRCodePNG(kodeUnik, options = {}) {
-  const defaultOptions = {
+// Generate PNG buffer (untuk download file) - async
+async function generatePNGBuffer(kodeUnik, options = {}) {
+  return QRCode.toBuffer(kodeUnik, {
     type: 'png',
     errorCorrectionLevel: 'M',
-    margin: 4,
-    width: 300,
+    width: options.width || 300,
+    height: options.height || 300,
     color: {
-      dark: '#000000',
-      light: '#ffffff'
+      dark: options.darkColor || '#000000',
+      light: options.lightColor || '#ffffff'
     }
-  };
-  return QRCode.toBuffer(kodeUnik, { ...defaultOptions, ...options });
+  });
 }
 
+// Generate Data URL string (untuk direct img src)
 async function generateQRCodeDataURL(kodeUnik, options = {}) {
-  const defaultOptions = {
-    type: 'image/png',
+  return QRCode.toDataURL(kodeUnik, {
     errorCorrectionLevel: 'M',
-    margin: 4,
-    width: 300,
-    color: {
-      dark: '#000000',
-      light: '#ffffff'
-    }
-  };
-  return QRCode.toDataURL(kodeUnik, { ...defaultOptions, ...options });
+    width: options.width || 300,
+    margin: options.margin || 2
+  });
 }
 
 module.exports = {
-  generateQRCodeSVG,
-  generateQRCodePNG,
+  generateSVG,
+  generatePNGBuffer,
+  generateQRCodeSVG: generateSVG,
   generateQRCodeDataURL
 };

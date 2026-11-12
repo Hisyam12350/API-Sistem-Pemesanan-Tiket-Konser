@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const userModel = require('../models/userModel');
+const { logger } = require('../utils/logger');
 
 const VALID_ROLES = ['SuperAdmin', 'Admin', 'Customer', 'Scanner'];
 
@@ -12,7 +13,7 @@ const userController = {
         data: users
       });
     } catch (error) {
-      console.error('Error on getAllUsers:', error);
+      logger.error({ error: error.message, stack: error.stack }, 'Error on getAllUsers');
       return res.status(500).json({
         success: false,
         message: 'Terjadi kesalahan pada server saat mengambil daftar user.',
@@ -38,7 +39,7 @@ const userController = {
         data: user
       });
     } catch (error) {
-      console.error('Error on getUserById:', error);
+      logger.error({ error: error.message, stack: error.stack }, 'Error on getUserById');
       return res.status(500).json({
         success: false,
         message: 'Terjadi kesalahan pada server saat mengambil data user.',
@@ -85,7 +86,7 @@ const userController = {
         data: updatedUser
       });
     } catch (error) {
-      console.error('Error on updateUser:', error);
+      logger.error({ error: error.message, stack: error.stack }, 'Error on updateUser');
       return res.status(500).json({
         success: false,
         message: 'Terjadi kesalahan pada server saat memperbarui data user.',
@@ -112,7 +113,7 @@ const userController = {
         data: deletedUser
       });
     } catch (error) {
-      console.error('Error on deleteUser:', error);
+      logger.error({ error: error.message, stack: error.stack }, 'Error on deleteUser');
       return res.status(500).json({
         success: false,
         message: 'Terjadi kesalahan pada server saat menghapus user.',

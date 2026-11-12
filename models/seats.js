@@ -4,6 +4,14 @@ const SELECT_COLUMNS = 'id, kategori_id, nomor_kursi, status_kursi, locked_until
 
 const Seat = {
   async getSeatsByCategory(kategoriId) {
+    // Bebaskan kursi yang locked tetapi locked_until sudah kadaluwarsa
+    await supabase
+      .from('seats')
+      .update({ status_kursi: 'available', locked_until: null, locked_by: null })
+      .eq('kategori_id', kategoriId)
+      .eq('status_kursi', 'locked')
+      .lt('locked_until', new Date().toISOString());
+
     const { data, error } = await supabase
       .from('seats')
       .select(SELECT_COLUMNS)
@@ -48,6 +56,14 @@ const Seat = {
   },
 
   async lockSeat(seatId, lockedUntil, lockedBy = null) {
+    // Bebaskan kursi ini jika sedang locked tapi sudah kadaluwarsa
+    await supabase
+      .from('seats')
+      .update({ status_kursi: 'available', locked_until: null, locked_by: null })
+      .eq('id', seatId)
+      .eq('status_kursi', 'locked')
+      .lt('locked_until', new Date().toISOString());
+
     const { data, error } = await supabase
       .from('seats')
       .update({ status_kursi: 'locked', locked_until: lockedUntil, locked_by: lockedBy })
