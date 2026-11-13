@@ -51,7 +51,7 @@ const userController = {
   async updateUser(req, res) {
     try {
       const { id } = req.params;
-      const { username, email, password, role } = req.body;
+      const { username, email, password, role } = req.validated;
 
       const existingUser = await userModel.findUserById(id);
       if (!existingUser) {
@@ -61,24 +61,34 @@ const userController = {
         });
       }
 
-      if (role && !VALID_ROLES.includes(role)) {
-        return res.status(400).json({
+      // Defense in depth: Check ownership (Customer can only update themselves)
+      if (req.user.role !== 'SuperAdmin' && req.user.id !== id) {
+        return res.status(403).json({
           success: false,
-          message: `Role '${role}' tidak valid. Pilihan role: ${VALID_ROLES.join(', ')}`
+          message: 'Akses dilarang. Anda hanya dapat mengubah data sendiri.'
         });
       }
 
-      let hashedPassword = null;
-      if (password) {
-        hashedPassword = await bcrypt.hash(password, 10);
+      // Only SuperAdmin can modify role
+      const updateData = { username, email, password: null };
+      if (req.user.role === 'SuperAdmin' && role) {
+        if (!VALID_ROLES.includes(role)) {
+          return res.status(400).json({
+            success: false,
+            message: `Role '${role}' tidak valid. Pilihan role: ${VALID_ROLES.join(', ')}`
+          });
+        }
+        updateData.role = role;
       }
 
-      const updatedUser = await userModel.updateUser(id, {
-        username,
-        email,
-        password: hashedPassword,
-        role
-      });
+      if (password) {
+        updateData.password = await bcrypt.hash(password, 10);
+      }
+
+      // Remove undefined fields
+      Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key]);
+
+      const updatedUser = await userModel.updateUser(id, updateData);
 
       return res.status(200).json({
         success: true,

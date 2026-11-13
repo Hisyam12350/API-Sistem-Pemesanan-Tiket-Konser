@@ -8,7 +8,7 @@ const VALID_ROLES = ['SuperAdmin', 'Admin', 'Customer', 'Scanner'];
 const authController = {
   async register(req, res) {
     try {
-      const { username, email, password, role } = req.body;
+      const { username, email, password } = req.body;
 
       if (!username || !email || !password) {
         return res.status(400).json({
@@ -17,20 +17,8 @@ const authController = {
         });
       }
 
-      if (role && (role === 'SuperAdmin' || role === 'Admin')) {
-        return res.status(403).json({
-          success: false,
-          message: 'Role Admin/SuperAdmin tidak dapat didaftarkan melalui registrasi publik.'
-        });
-      }
-
-      const assignedRole = role || 'Customer';
-      if (!VALID_ROLES.includes(assignedRole)) {
-        return res.status(400).json({
-          success: false,
-          message: `Role '${role}' tidak valid. Pilihan role: ${VALID_ROLES.join(', ')}`
-        });
-      }
+      // Force Customer role for all public registrations
+      const assignedRole = 'Customer';
 
       const existingUser = await userModel.findUserByEmail(email);
       if (existingUser) {
@@ -47,7 +35,7 @@ const authController = {
         username,
         email,
         password: hashedPassword,
-        role: assignedRole
+        role: assignedRole  // Always 'Customer'
       });
 
       // Generate JWT token (same as login)
