@@ -1,5 +1,7 @@
 const TicketCategory = require('../models/ticketCategories.js');
 const Event = require('../models/events.js');
+const pool = require('../config/db.js');
+const { mapError } = require('../utils/httpError.js');
 
 const ticketCategoryController = {
   // GET /api/ticket-categories?event_id=
@@ -9,7 +11,7 @@ const ticketCategoryController = {
       const result = await TicketCategory.getAllCategories(event_id);
       res.status(200).json({ success: true, message: "Daftar kategori tiket", data: result });
     } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
+      mapError(error, res, 'Error on ticket categories');
     }
   },
 
@@ -25,14 +27,14 @@ const ticketCategoryController = {
 
       res.status(200).json({ success: true, message: "Detail kategori tiket", data: result });
     } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
+      mapError(error, res, 'Error on ticket categories');
     }
   },
 
   // POST /api/ticket-categories (Admin/SuperAdmin)
   createCategory: async (req, res) => {
     try {
-      const { event_id, nama_kategori, harga, kuota_total } = req.body;
+      const { event_id, nama_kategori, harga, kuota_total } = req.validated || req.body;
 
       if (!event_id || !nama_kategori || harga === undefined || kuota_total === undefined) {
         return res.status(400).json({
@@ -64,7 +66,7 @@ const ticketCategoryController = {
 
       res.status(201).json({ success: true, message: "Kategori tiket berhasil dibuat", data: result });
     } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
+      mapError(error, res, 'Error on ticket categories');
     }
   },
 
@@ -72,7 +74,7 @@ const ticketCategoryController = {
   updateCategory: async (req, res) => {
     try {
       const { id } = req.params;
-      const { nama_kategori, harga, kuota_total } = req.body;
+      const { nama_kategori, harga, kuota_total } = req.validated || req.body;
 
       const existing = await TicketCategory.getCategoryById(id);
       if (!existing) {
@@ -95,7 +97,7 @@ const ticketCategoryController = {
 
       res.status(200).json({ success: true, message: "Kategori tiket berhasil diperbarui", data: result });
     } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
+      mapError(error, res, 'Error on ticket categories');
     }
   },
 
@@ -108,10 +110,16 @@ const ticketCategoryController = {
         return res.status(404).json({ success: false, message: `Kategori tiket dengan ID ${id} tidak ditemukan.` });
       }
 
+      // Kategori yang sudah pernah dipesan tidak boleh dihapus (riwayat order/tiket akan rusak).
+      const used = await pool.query('SELECT 1 FROM order_items WHERE kategori_id = $1 LIMIT 1', [id]);
+      if (used.rows.length > 0) {
+        return res.status(409).json({ success: false, message: 'Kategori tidak dapat dihapus karena sudah dipakai oleh order. Turunkan kuota_total jika ingin menutup penjualan.' });
+      }
+
       const result = await TicketCategory.deleteCategory(id);
       res.status(200).json({ success: true, message: "Kategori tiket berhasil dihapus", data: result });
     } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
+      mapError(error, res, 'Error on ticket categories');
     }
   }
 };

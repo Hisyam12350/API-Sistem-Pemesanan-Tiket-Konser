@@ -21,13 +21,39 @@ const scannerRoutes = require('./routes/scannerRoutes');
 const ticketRoutes = require('./routes/ticketRoutes');
 
 const { logger, loggerMiddleware } = require('./utils/logger');
+const { serverError } = require('./utils/httpError');
 const helmetMiddleware = require('./middleware/helmetMiddleware');
 
 const app = express();
 const port = process.env.PORT || 5000;
 
-// Global Rate Limiter
-app.use(globalLimiter);
+// Di belakang reverse proxy/PaaS (Render, Railway, Heroku, Nginx, dll) IP klien ada di X-Forwarded-For.
+// Tanpa 'trust proxy', rate limiter melihat SEMUA user sebagai satu IP (IP proxy) -> satu orang nakal
+// bisa memblokir semua orang. Atur TRUST_PROXY: angka (jumlah proxy), 'true'/'false', atau daftar IP/subnet.
+// Default: 1 di production, nonaktif di development.
+(() => {
+  const raw = process.env.TRUST_PROXY;
+  let value = process.env.NODE_ENV === 'production' ? 1 : false;
+  if (raw !== undefined && raw !== '') {
+    if (raw === 'true') value = true;
+    else if (raw === 'false') value = false;
+    else if (/^\d+$/.test(raw)) value = Number(raw);
+    else value = raw;
+  }
+  app.set('trust proxy', value);
+})();
+
+// Middleware Global: log -> header keamanan -> CORS (sebelum limiter agar respons 429 tetap membawa header CORS)
+app.use(loggerMiddleware);
+app.use(helmetMiddleware);
+app.use(corsMiddleware());
+
+// Global Rate Limiter. Webhook Midtrans dikecualikan: itu server-ke-server dari IP Midtrans yang sama,
+// jika ikut dibatasi notifikasi pembayaran asli bisa ditolak (429) -> tiket tidak terbit.
+app.use((req, res, next) => {
+  if (req.method === 'POST' && req.path === '/api/payments/notification') return next();
+  return globalLimiter(req, res, next);
+});
 
 // Specific Rate Limiters (MUST be before route registration to take effect)
 app.use('/api/auth/login', authLimiter);
@@ -36,13 +62,9 @@ app.use('/api/seats/lock', seatLockLimiter);
 app.use('/api/payments/:orderId/create', paymentCreateLimiter);
 app.use('/api/seats/generate', seatGenerateLimiter);
 
-// Middleware Global
-app.use(loggerMiddleware);
-app.use(corsMiddleware());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-// Security headers
-app.use(helmetMiddleware);
+// Batas ukuran body (default Express 100kb dibuat eksplisit); file diunggah lewat multer (batas sendiri).
+app.use(express.json({ limit: '100kb' }));
+app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 
 // Rute Dasar / Health Check
 app.get('/', (req, res) => {
@@ -75,14 +97,32 @@ app.use((req, res) => {
   });
 });
 
-// Handling Global Error
+// Handling Global Error: tidak pernah membocorkan pesan internal ke klien.
 app.use((err, req, res, next) => {
-  console.error('Unhandled Error:', err.message, err.stack);
-  res.status(500).json({
-    success: false,
-    message: 'Terjadi kesalahan pada server.',
-    error: err.message
-  });
+  if (res.headersSent) return next(err);
+
+  // JSON rusak / body terlalu besar (dari body-parser)
+  if (err && err.type === 'entity.parse.failed') {
+    return res.status(400).json({ success: false, message: 'Format JSON tidak valid.' });
+  }
+  if (err && err.type === 'entity.too.large') {
+    return res.status(413).json({ success: false, message: 'Ukuran request terlalu besar.' });
+  }
+
+  // Error upload (multer)
+  if (err && err.name === 'MulterError') {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ success: false, message: 'Ukuran file maksimal 5 MB.' });
+    }
+    return res.status(400).json({ success: false, message: 'Upload file tidak valid.' });
+  }
+
+  // Error 4xx yang sengaja dibuat kode kita (mis. tipe file ditolak): pesannya memang untuk user.
+  if (err && Number.isInteger(err.status) && err.status >= 400 && err.status < 500) {
+    return res.status(err.status).json({ success: false, message: err.message });
+  }
+
+  return serverError(res, err, 'Unhandled error');
 });
 
 // Only start server when run directly (not when required for testing)

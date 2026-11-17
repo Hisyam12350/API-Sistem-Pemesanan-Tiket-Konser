@@ -12,6 +12,7 @@ const request = require('supertest');
 describe('Seats Flow', () => {
   let adminToken;
   let customerToken;
+  let otherCustomerToken;
   let eventId;
   let ticketCategoryId;
 
@@ -21,6 +22,8 @@ describe('Seats Flow', () => {
 
     const customer = await createTestUser('Customer');
     customerToken = await loginUser(customer.email, 'password123');
+    const otherCustomer = await createTestUser('Customer');
+    otherCustomerToken = await loginUser(otherCustomer.email, 'password123');
 
     const venue = await createTestVenue(adminToken);
     const event = await createTestEvent(adminToken, venue.id);
@@ -103,7 +106,7 @@ describe('Seats Flow', () => {
     expect(res.body.data.unlocked).toHaveLength(1);
   });
 
-  test('reject lock for already locked seat', async () => {
+  test('reject lock for seat held by another user', async () => {
     const seatsRes = await request(app)
       .get(`/api/seats?kategori_id=${ticketCategoryId}`)
       .set('Authorization', `Bearer ${adminToken}`);
@@ -120,7 +123,7 @@ describe('Seats Flow', () => {
     
     const res = await request(app)
       .post('/api/seats/lock')
-      .set('Authorization', `Bearer ${customerToken}`)
+      .set('Authorization', `Bearer ${otherCustomerToken}`)
       .send({
         seat_ids: seatIds,
         minutes: 15

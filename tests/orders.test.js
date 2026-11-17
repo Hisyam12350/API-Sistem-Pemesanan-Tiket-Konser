@@ -44,12 +44,12 @@ describe('Orders Flow', () => {
     
     seatIds = seatRes.body.data.map(s => s.id);
     
-    // Lock seats for customer
+    // Lock only the seats used by the first order; later tests lock their own seats.
     await request(app)
       .post('/api/seats/lock')
       .set('Authorization', `Bearer ${customerToken}`)
       .send({
-        seat_ids: seatIds,
+        seat_ids: seatIds.slice(0, 2),
         minutes: 15
       });
   });

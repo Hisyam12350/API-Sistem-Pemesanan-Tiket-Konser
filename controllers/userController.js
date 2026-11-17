@@ -1,8 +1,15 @@
 const bcrypt = require('bcryptjs');
 const userModel = require('../models/userModel');
-const { logger } = require('../utils/logger');
+const { mapError } = require('../utils/httpError');
+const { invalidateUser } = require('../middleware/authMiddleware');
 
-const VALID_ROLES = ['SuperAdmin', 'Admin', 'Customer', 'Scanner'];
+// Role yang boleh dikelola oleh Admin (bukan SuperAdmin). Admin tidak boleh menyentuh
+// akun Admin/SuperAdmin, dan tidak boleh menaikkan siapa pun menjadi Admin/SuperAdmin.
+const ADMIN_MANAGEABLE_ROLES = ['Customer', 'Scanner'];
+
+function forbidden(res, message) {
+  return res.status(403).json({ success: false, message });
+}
 
 const userController = {
   async getAllUsers(req, res) {
@@ -13,18 +20,16 @@ const userController = {
         data: users
       });
     } catch (error) {
-      logger.error({ error: error.message, stack: error.stack }, 'Error on getAllUsers');
-      return res.status(500).json({
-        success: false,
-        message: 'Terjadi kesalahan pada server saat mengambil daftar user.',
-        error: error.message
-      });
+      return mapError(error, res, 'Error on getAllUsers');
     }
   },
 
   async getUserById(req, res) {
     try {
-      const { id } = req.params;
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ success: false, message: 'ID user tidak valid.' });
+      }
       const user = await userModel.findUserById(id);
 
       if (!user) {
@@ -39,56 +44,95 @@ const userController = {
         data: user
       });
     } catch (error) {
-      logger.error({ error: error.message, stack: error.stack }, 'Error on getUserById');
-      return res.status(500).json({
-        success: false,
-        message: 'Terjadi kesalahan pada server saat mengambil data user.',
-        error: error.message
-      });
+      return mapError(error, res, 'Error on getUserById');
     }
   },
 
+  /**
+   * PUT /api/users/:id
+   *
+   * Aturan otorisasi:
+   *  - Customer : hanya boleh mengubah AKUN SENDIRI, dan tidak boleh mengubah role.
+   *  - Admin    : boleh mengubah akun sendiri (tanpa mengubah role) dan akun Customer/Scanner.
+   *               Boleh memindahkan role hanya di antara Customer <-> Scanner.
+   *               Tidak boleh menyentuh akun Admin/SuperAdmin lain.
+   *  - SuperAdmin: boleh mengubah semua akun dan role, kecuali mengubah role dirinya sendiri
+   *               (mencegah SuperAdmin terkunci keluar secara tidak sengaja).
+   */
   async updateUser(req, res) {
     try {
-      const { id } = req.params;
+      const targetId = Number(req.params.id);
+      if (!Number.isInteger(targetId) || targetId <= 0) {
+        return res.status(400).json({ success: false, message: 'ID user tidak valid.' });
+      }
+
+      const actor = req.user;
+      const isSelf = Number(actor.id) === targetId;
       const { username, email, password, role } = req.validated;
 
-      const existingUser = await userModel.findUserById(id);
+      // Cek paling murah dulu: non-admin tidak boleh menyentuh akun orang lain.
+      // Dilakukan SEBELUM query DB agar tidak membocorkan apakah ID tersebut ada.
+      if (actor.role !== 'SuperAdmin' && actor.role !== 'Admin' && !isSelf) {
+        return forbidden(res, 'Anda hanya boleh mengubah akun Anda sendiri.');
+      }
+
+      const existingUser = await userModel.findUserById(targetId);
       if (!existingUser) {
         return res.status(404).json({
           success: false,
-          message: `User dengan ID ${id} tidak ditemukan.`
+          message: `User dengan ID ${targetId} tidak ditemukan.`
         });
       }
 
-      // Defense in depth: Check ownership (Customer can only update themselves)
-      if (req.user.role !== 'SuperAdmin' && req.user.id !== id) {
-        return res.status(403).json({
-          success: false,
-          message: 'Akses dilarang. Anda hanya dapat mengubah data sendiri.'
-        });
-      }
+      const wantsRoleChange = role !== undefined && role !== existingUser.role;
 
-      // Only SuperAdmin can modify role
-      const updateData = { username, email, password: null };
-      if (req.user.role === 'SuperAdmin' && role) {
-        if (!VALID_ROLES.includes(role)) {
-          return res.status(400).json({
-            success: false,
-            message: `Role '${role}' tidak valid. Pilihan role: ${VALID_ROLES.join(', ')}`
-          });
+      if (actor.role === 'SuperAdmin') {
+        if (isSelf && wantsRoleChange) {
+          return forbidden(res, 'SuperAdmin tidak dapat mengubah role akunnya sendiri.');
         }
-        updateData.role = role;
+      } else if (actor.role === 'Admin') {
+        if (isSelf) {
+          if (wantsRoleChange) {
+            return forbidden(res, 'Anda tidak dapat mengubah role akun Anda sendiri.');
+          }
+        } else {
+          if (!ADMIN_MANAGEABLE_ROLES.includes(existingUser.role)) {
+            return forbidden(res, 'Admin tidak boleh mengubah akun Admin/SuperAdmin.');
+          }
+          if (wantsRoleChange && !ADMIN_MANAGEABLE_ROLES.includes(role)) {
+            return forbidden(res, 'Admin hanya boleh mengatur role Customer atau Scanner.');
+          }
+        }
+      } else {
+        // Customer (atau role lain) yang mengubah akun sendiri: role tidak boleh berubah.
+        if (wantsRoleChange) {
+          return forbidden(res, 'Anda tidak diizinkan mengubah role.');
+        }
       }
 
+      // Tidak ada perubahan nyata (mis. hanya mengirim role yang sama): jangan kirim UPDATE kosong.
+      if (username === undefined && email === undefined && !password && !wantsRoleChange) {
+        return res.status(200).json({
+          success: true,
+          message: 'Tidak ada perubahan.',
+          data: existingUser
+        });
+      }
+
+      let hashedPassword = null;
       if (password) {
-        updateData.password = await bcrypt.hash(password, 10);
+        hashedPassword = await bcrypt.hash(password, 12);
       }
 
-      // Remove undefined fields
-      Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key]);
+      const updatedUser = await userModel.updateUser(targetId, {
+        username,
+        email,
+        password: hashedPassword,
+        role: wantsRoleChange ? role : undefined
+      });
 
-      const updatedUser = await userModel.updateUser(id, updateData);
+      // Role/akun berubah -> buang cache auth supaya efeknya langsung berlaku.
+      invalidateUser(targetId);
 
       return res.status(200).json({
         success: true,
@@ -96,19 +140,28 @@ const userController = {
         data: updatedUser
       });
     } catch (error) {
-      logger.error({ error: error.message, stack: error.stack }, 'Error on updateUser');
-      return res.status(500).json({
-        success: false,
-        message: 'Terjadi kesalahan pada server saat memperbarui data user.',
-        error: error.message
-      });
+      if (error && error.code === '23505') {
+        return res.status(409).json({
+          success: false,
+          message: 'Email sudah dipakai akun lain.'
+        });
+      }
+      return mapError(error, res, 'Error on updateUser');
     }
   },
 
   async deleteUser(req, res) {
     try {
-      const { id } = req.params;
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ success: false, message: 'ID user tidak valid.' });
+      }
+      // Mencegah SuperAdmin menghapus akunnya sendiri (sistem bisa tanpa SuperAdmin).
+      if (Number(req.user.id) === id) {
+        return res.status(403).json({ success: false, message: 'Anda tidak dapat menghapus akun Anda sendiri.' });
+      }
       const deletedUser = await userModel.deleteUser(id);
+      invalidateUser(id);
 
       if (!deletedUser) {
         return res.status(404).json({
@@ -123,12 +176,7 @@ const userController = {
         data: deletedUser
       });
     } catch (error) {
-      logger.error({ error: error.message, stack: error.stack }, 'Error on deleteUser');
-      return res.status(500).json({
-        success: false,
-        message: 'Terjadi kesalahan pada server saat menghapus user.',
-        error: error.message
-      });
+      return mapError(error, res, 'Error on deleteUser');
     }
   }
 };

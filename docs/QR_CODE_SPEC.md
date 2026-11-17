@@ -114,15 +114,17 @@ Camera-based scanning → POST to `/api/scanner/check-in`.
 
 **Flow:**
 ```
-1. Camera preview → Scan QR code
-2. Extract kode_unik string from result
-3. POST /api/scanner/check-in { "kode_unik": "TKT-1-5-ABC123" }
-4. Handle response:
+1. GET /api/scanner/assigned-events → pilih event yang ditugaskan kepada petugas
+2. Camera preview → Scan QR code
+3. Extract kode_unik string from result
+4. POST /api/scanner/check-in { "kode_unik": "TKT-1-5-ABC123", "event_id": 1 }
+5. Handle response:
    - 200: Show success + ticket/event details
    - 404: "Tiket tidak ditemukan"
    - 409: "Tiket sudah dipindai" / "Event tidak valid"
+  - 403: Petugas tidak ditugaskan ke event tersebut
    - 500: "Server error"
-5. Audio/visual feedback (success = green + beep; error = red + buzz)
+6. Audio/visual feedback (success = green + beep; error = red + buzz)
 ```
 
 **Scanner Libraries:**
@@ -143,7 +145,10 @@ GET `/api/scanner/events/:eventId/scanned` → Display paginated table.
 |--------|----------|------|-------------|
 | `POST` | `/api/scanner/check-in` | Scanner | Scan QR, validate, update ticket |
 | `GET` | `/api/scanner/scanned-tickets` | Scanner | List tickets scanned by this scanner |
-| `GET` | `/api/scanner/events/:eventId/scanned` | Scanner/Admin | List all scanned tickets for event |
+| `GET` | `/api/scanner/assigned-events` | Scanner | List events assigned to this scanner |
+| `GET` | `/api/scanner/events/:eventId/scanned` | Scanner/Admin | List all scanned tickets for event (Scanner must be assigned) |
+| `POST` | `/api/scanner/events/:eventId/assignments` | Admin/SuperAdmin | Assign a Scanner to an event |
+| `DELETE` | `/api/scanner/events/:eventId/assignments/:scannerId` | Admin/SuperAdmin | Revoke a Scanner assignment |
 
 ### Check-In Request
 ```http
@@ -152,7 +157,8 @@ Authorization: Bearer <scanner_token>
 Content-Type: application/json
 
 {
-  "kode_unik": "TKT-1-5-ABC123"
+  "kode_unik": "TKT-1-5-ABC123",
+  "event_id": 1
 }
 ```
 
@@ -185,13 +191,15 @@ Content-Type: application/json
 
 | Status | Code | Message |
 |--------|------|---------|
-| 400 | Validation | `kode_unik` missing or invalid format |
+| 400 | Validation | `kode_unik` / `event_id` missing or invalid format |
 | 401 | Unauthorized | Invalid/expired scanner token |
 | 403 | Forbidden | User not Scanner/Admin/SuperAdmin |
 | 404 | Not Found | `Tiket tidak ditemukan.` |
-| 409 | Conflict | `Tiket sudah dipindai.` / `Event tidak dalam status yang memungkinkan check-in.` / `Event telah berakhir.` |
+| 409 | Conflict | `Tiket sudah dipindai.` / `Tiket ini bukan untuk event yang sedang di-scan.` / `Order tiket ini tidak berstatus lunas.` / `Check-in belum dibuka untuk event ini.` / `Check-in untuk event ini sudah ditutup.` / `Event tidak dalam status yang memungkinkan check-in.` |
 | 429 | Rate Limited | Too many scan attempts |
 | 500 | Server Error | `Terjadi kesalahan pada server.` |
+
+Check-in window: opens `CHECKIN_OPENS_HOURS_BEFORE` (default 6) hours before `waktu_event` and closes `CHECKIN_CLOSES_HOURS_AFTER` (default 12) hours after it.
 
 ---
 

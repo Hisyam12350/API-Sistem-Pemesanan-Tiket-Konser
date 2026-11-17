@@ -8,7 +8,7 @@ Backend REST API untuk sistem **pemesanan tiket konser** — dibangun dengan **N
 
 ## ✨ Fitur Utama
 
-- **Autentikasi & Keamanan Multi-Role** — Register, Login (JWT), dan profil user (`SuperAdmin`, `Admin`, `Customer`, `Scanner`). Registrasi publik aman (default `Customer` dan menolak eskalasi hak akses Admin).
+- **Autentikasi & Keamanan Multi-Role** — Register, Login (JWT), dan profil user (`SuperAdmin`, `Admin`, `Customer`, `Scanner`). Registrasi publik **selalu** menghasilkan `Customer` (field `role` diabaikan). Role `Scanner`/`Admin` hanya diberikan lewat `PUT /api/users/:id` oleh SuperAdmin (Admin hanya boleh Customer ⇄ Scanner).
 - **Manajemen Event & Banner** — CRUD event konser, upload banner langsung ke Supabase Storage, relasi genre & venue tempat konser.
 - **Venue & Tempat Konser** — Master tipe tempat (Stadion, Indoor, Outdoor, Lapangan), katalog tempat dengan filter kategori, pencarian (nama/alamat/kota), dan paginasi.
 - **Kategori Tiket & Kuota** — CRUD kategori tiket per event (harga, kuota) dengan penanganan kuota otomatis via DB triggers.
@@ -16,7 +16,7 @@ Backend REST API untuk sistem **pemesanan tiket konser** — dibangun dengan **N
 - **Checkout & Pemesanan** — Buat pesanan dari kursi yang terkunci, kalkulasi total harga, pembatalan pesanan pending dengan pengembalian kuota & kursi secara otomatis.
 - **Payment Gateway Midtrans Snap** — Pembuatan transaksi Snap token, sinkronisasi status pembayaran, dan webhook notification (idempotent, verifikasi signature SHA-512).
 - **E-Ticket & QR Code** — Tiket otomatis dibuat setelah pembayaran berhasil. Endpoint detail tiket menyediakan embed kode SVG langsung dan endpoint download file gambar PNG.
-- **Scanner Gate Check-In** — Validasi dan check-in QR Code tiket di lokasi konser (role Scanner/Admin), pelacakan riwayat scan tiket per petugas dan per event.
+- **Scanner Gate Check-In** — Validasi dan check-in QR Code tiket di lokasi konser. Scanner hanya dapat memindai dan melihat rekap event yang ditugaskan Admin; Admin/SuperAdmin tetap dapat menangani semua event.
 - **Keamanan & Performa** — Rate limiting bertingkat (global, auth, booking, payment, upload, scan), CORS fleksibel (mendukung web & emulator Android `10.0.2.2`), helmet security headers, validasi skema Zod, dan structured JSON logging dengan Pino.
 - **Automated Testing** — Suite pengujian otomatis berbasis **Jest & Supertest** yang mencakup pengujian end-to-end seluruh flow utama.
 
@@ -58,6 +58,7 @@ Backend REST API untuk sistem **pemesanan tiket konser** — dibangun dengan **N
 | `order_items` | Item dalam pesanan (kategori, jumlah, harga satuan) |
 | `order_item_seats` | Junction kursi spesifik yang dipilih untuk setiap order item |
 | `payments` | Transaksi pembayaran (Snap token, status, redirect URL, midtrans ID) |
+| `scanner_event_assignments` | Penugasan akun Scanner ke event yang boleh ditangani |
 | `tickets` | E-ticket (kode unik `TKT-...`, status, waktu scan, petugas scan) |
 
 ### Enum
@@ -66,7 +67,7 @@ Backend REST API untuk sistem **pemesanan tiket konser** — dibangun dengan **N
 | `Role` | SuperAdmin, Admin, Customer, Scanner |
 | `event_status` | upcoming, ongoing, completed |
 | `order_status` | pending, paid, expired, cancelled |
-| `payment_status` | pending, success, expired, failed |
+| `payment_status` | pending, success, expired, failed, refunded |
 | `ticket_status` | active, scanned, cancelled |
 | `seat_status` | available, locked, booked |
 
@@ -87,7 +88,7 @@ npm install
 
 ### 3. Setup Database (Supabase SQL Editor)
 1. Buka dashboard Supabase Anda → masuk ke menu **SQL Editor**.
-2. Jalankan isi file [`config/schema.sql`](file:///d:/Folder%20Proyek/Project%20UKK/API/config/schema.sql) untuk inisialisasi tabel, tipe enum, dan trigger fungsi kuota.
+2. Jalankan isi file [`config/schema.sql`](config/schema.sql) untuk inisialisasi tabel, tipe enum, dan trigger fungsi kuota.
 3. Jalankan file-file migrasi secara berurutan:
    - `config/migrations/001_add_order_item_seats.sql`
    - `config/migrations/002_venues_google_places.sql`
@@ -95,6 +96,11 @@ npm install
    - `config/migrations/004_payments_midtrans.sql`
    - `config/migrations/005_scanner_indexes.sql`
    - `config/migrations/006_pg_cron_jobs.sql`
+   - `config/migrations/007_security_hardening.sql` — **wajib** (unique tiket per kursi + Row Level Security). Jalankan **sebelum** men-deploy kode backend terbaru.
+   - `config/migrations/008_business_rules_and_hardening.sql` — **wajib**, jalankan setelah 007 dan **sebelum** deploy kode terbaru. Isinya: status pembayaran `refunded` + kolom `needs_refund`, email unik tanpa membedakan huruf besar/kecil, constraint data (harga/kuota), index, fungsi pemeliharaan, dan jadwal pg_cron baru (melepas lock kursi dengan aman & mengubah status event otomatis). Aman dijalankan berulang. Menggantikan job pg_cron versi 006.
+   - `config/migrations/009_scanner_event_assignments.sql` — **wajib** untuk membatasi Scanner ke event yang ditugaskan.
+
+> ⚠️ `schema.sql` hanya untuk database **kosong**. Baris `DROP TABLE` di dalamnya sengaja di-comment karena menghapus semua data.
 
 ### 4. Konfigurasi Environment (`.env`)
 Buat file `.env` di dalam folder `API` berdasarkan contoh di `.env.example`:
@@ -105,8 +111,9 @@ SUPABASE_URL=https://xxxx.supabase.co
 SUPABASE_PUBLISHABLE_KEY=sb_publishable_xxx
 SUPABASE_SECRET_KEY=sb_secret_xxx
 
-# JWT Auth
-JWT_SECRET=rahasia_string_jwt_anda_yang_sangat_panjang_dan_aman
+# JWT Auth — WAJIB, minimal 32 karakter acak (server tidak mau start jika kosong/lemah)
+# Buat: node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+JWT_SECRET=isi_dengan_string_acak_hasil_perintah_di_atas
 JWT_EXPIRES_IN=1d
 
 # PostgreSQL Connection String (Pooler Supabase)
@@ -121,7 +128,26 @@ ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
 # Midtrans Payment Gateway (Sandbox)
 MIDTRANS_SERVER_KEY=SB-Mid-server-xxxx
 MIDTRANS_CLIENT_KEY=Mid-client-xxxx
+MIDTRANS_SIGNATURE_KEY=SB-Mid-server-xxxx
 MIDTRANS_IS_PRODUCTION=false
+
+# Development lokal. Gunakan NODE_ENV=production hanya pada deployment production.
+NODE_ENV=development
+# Lokal tanpa reverse proxy: 0. Di production, sesuaikan dengan jumlah proxy tepercaya.
+TRUST_PROXY=0
+
+# DATABASE_URL menggunakan TLS. Verifikasi sertifikat otomatis aktif di production,
+# tetapi nonaktif secara default di development/test. Untuk production, isi CA tepercaya Supabase:
+# DB_SSL_CA=<isi sertifikat CA; newline dapat ditulis sebagai \n>
+# DB_SSL_REJECT_UNAUTHORIZED=true  # aktifkan verifikasi juga di development/test
+
+# Aturan bisnis (opsional; ini nilai default)
+MAX_SEATS_PER_ORDER=6          # maks kursi per order & maks kursi yang boleh ditahan satu user per event
+ORDER_PAYMENT_MINUTES=15       # batas waktu bayar setelah order dibuat
+DEFAULT_LOCK_MINUTES=15
+MAX_LOCK_MINUTES=60
+CHECKIN_OPENS_HOURS_BEFORE=6   # check-in dibuka N jam sebelum acara
+CHECKIN_CLOSES_HOURS_AFTER=12  # check-in ditutup N jam setelah acara mulai
 ```
 
 ### 5. Menjalankan Server
@@ -140,6 +166,9 @@ Backend dilengkapi dengan unit & integration testing:
 # Menjalankan seluruh test suite
 npm test
 
+# Menjalankan tes keamanan tanpa koneksi database
+npm run test:unit
+
 # Menjalankan test dalam mode pantau perubahan (watch mode)
 npm run test:watch
 
@@ -156,16 +185,17 @@ Semua endpoint API diawali dengan base path: `/api`
 ### 🔐 Autentikasi (`/api/auth`)
 | Method | Endpoint | Akses | Keterangan |
 |---|---|---|---|
-| POST | `/api/auth/register` | Publik | Mendaftar akun baru (role default: `Customer`) |
+| POST | `/api/auth/register` | Publik | Mendaftar akun baru (selalu `Customer`; field `role` diabaikan) |
 | POST | `/api/auth/login` | Publik | Login & mendapatkan JWT Bearer token |
 | GET | `/api/auth/me` | Login | Mendapatkan data profil user yang sedang login |
+| PUT | `/api/auth/change-password` | Login | Ganti password sendiri (`{ old_password, new_password }`, minimal 8 karakter) |
 
 ### 👤 Manajemen User (`/api/users`)
 | Method | Endpoint | Akses | Keterangan |
 |---|---|---|---|
 | GET | `/api/users` | Admin, SuperAdmin | Daftar semua pengguna |
 | GET | `/api/users/:id` | Admin, SuperAdmin | Detail data pengguna |
-| PUT | `/api/users/:id` | Admin, SuperAdmin, Customer | Update data pengguna |
+| PUT | `/api/users/:id` | Admin, SuperAdmin, Customer | Update data pengguna. Customer: hanya akun sendiri & tanpa role. Admin: akun sendiri + Customer/Scanner. SuperAdmin: semua (kecuali role sendiri) |
 | DELETE | `/api/users/:id` | SuperAdmin | Hapus akun pengguna |
 
 ### 🏟️ Tipe Tempat (`/api/venue-types`)
@@ -233,6 +263,7 @@ Semua endpoint API diawali dengan base path: `/api`
 | POST | `/api/payments/:orderId/create` | Customer, Admin, SuperAdmin | Buat transaksi Midtrans Snap token & redirect URL |
 | GET | `/api/payments/:orderId` | Customer, Admin, SuperAdmin | Cek status pembayaran & sinkronisasi dengan Midtrans |
 | POST | `/api/payments/notification` | Publik | Webhook notifikasi otomatis dari server Midtrans |
+| GET | `/api/payments/needs-refund` | Admin, SuperAdmin | Pembayaran yang uangnya masuk tetapi order sudah expired/batal (perlu refund manual di dashboard Midtrans) |
 
 ### 🎫 E-Ticket & QR Code (`/api/tickets`)
 | Method | Endpoint | Akses | Keterangan |
@@ -244,9 +275,13 @@ Semua endpoint API diawali dengan base path: `/api`
 ### 📱 Petugas Scanner (`/api/scanner`)
 | Method | Endpoint | Akses | Keterangan |
 |---|---|---|---|
-| POST | `/api/scanner/check-in` | Scanner, Admin, SuperAdmin | Check-in pengunjung via QR Code (`{ "kode_unik": "TKT-..." }`) |
+| POST | `/api/scanner/check-in` | Scanner, Admin, SuperAdmin | Check-in pengunjung via QR Code (`{ "kode_unik": "TKT-...", "event_id": 1 }` — `event_id` **wajib**; tiket event lain ditolak, order harus berstatus lunas, dan check-in hanya dibuka di jendela waktu sekitar acara) |
 | GET | `/api/scanner/scanned-tickets` | Scanner, Admin, SuperAdmin | Riwayat tiket yang sudah dipindai oleh petugas ini |
+| GET | `/api/scanner/assigned-events` | Scanner | Daftar event yang ditugaskan kepada petugas |
 | GET | `/api/scanner/events/:eventId/scanned` | Scanner, Admin, SuperAdmin | Rekap seluruh tiket yang telah check-in pada event tertentu |
+| GET | `/api/scanner/events/:eventId/assignments` | Admin, SuperAdmin | Daftar Scanner yang ditugaskan pada event |
+| POST | `/api/scanner/events/:eventId/assignments` | Admin, SuperAdmin | Menugaskan Scanner (`{ "scanner_id": 7 }`) ke event |
+| DELETE | `/api/scanner/events/:eventId/assignments/:scannerId` | Admin, SuperAdmin | Mencabut penugasan Scanner dari event |
 
 ---
 
@@ -272,6 +307,7 @@ API/
 ├── config/
 │   ├── schema.sql                     # Skema database lengkap
 │   ├── db.js                          # Koneksi pool PostgreSQL (pg)
+│   ├── limits.js                      # Batas bisnis order, lock, dan check-in
 │   ├── supabase.js                    # Client instance Supabase
 │   ├── jwt.js                         # Konfigurasi secret & masa aktif JWT
 │   ├── envValidation.js               # Validasi kelengkapan variabel .env
@@ -281,7 +317,10 @@ API/
 │       ├── 003_add_locked_by_to_seats.sql
 │       ├── 004_payments_midtrans.sql
 │       ├── 005_scanner_indexes.sql
-│       └── 006_pg_cron_jobs.sql
+│       ├── 006_pg_cron_jobs.sql
+│       ├── 007_security_hardening.sql
+│       ├── 008_business_rules_and_hardening.sql
+│       └── 009_scanner_event_assignments.sql
 ├── controllers/                       # Handler request/response per domain
 │   ├── authController.js
 │   ├── userController.js
@@ -309,12 +348,19 @@ API/
 │   ├── seats.js
 │   ├── orders.js
 │   ├── payments.js
+│   ├── scannerAssignments.js
 │   ├── venues.js
 │   ├── venueTypes.js
 │   └── genres.js
 ├── routes/                            # Definisi rute URL API
 ├── validators/                        # Skema validasi input Zod
+│   ├── authValidator.js
+│   ├── orderValidator.js
+│   ├── scannerValidator.js
+│   ├── seatValidator.js
+│   └── userValidator.js
 ├── utils/                             # Helper & utilitas
+│   ├── httpError.js                    # Pemetaan error API tanpa detail internal
 │   ├── logger.js                      # Pino logger & HTTP serializer
 │   ├── midtransService.js             # Integrasi Midtrans Snap & Webhook
 │   ├── qrCodeGenerator.js             # Generator SVG, PNG Buffer, DataURL
@@ -325,6 +371,15 @@ API/
 │   ├── payments.test.js
 │   ├── seats.test.js
 │   ├── setup.js
+│   ├── security/                       # Tes keamanan terisolasi
+│   │   ├── _env.js
+│   │   ├── app-hardening.test.js
+│   │   ├── auth-middleware.test.js
+│   │   ├── limits.test.js
+│   │   ├── payment-state.test.js
+│   │   ├── scanner.test.js
+│   │   ├── users-authz.test.js
+│   │   └── webhook.test.js
 │   └── utils/testHelpers.js
 ├── app.js                             # Inisialisasi Express server
 ├── jest.config.js                     # Konfigurasi Jest

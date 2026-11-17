@@ -1,4 +1,5 @@
 const VenueType = require('../models/venueTypes.js');
+const { mapError } = require('../utils/httpError.js');
 
 const venueTypeController = {
   getAllTypes: async (req, res) => {
@@ -6,7 +7,7 @@ const venueTypeController = {
       const result = await VenueType.getAllTypes();
       res.status(200).json({ success: true, message: 'Daftar tipe tempat', data: result });
     } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
+      mapError(error, res, 'Error on venue types');
     }
   },
 
@@ -22,7 +23,7 @@ const venueTypeController = {
       if (error.code === '23505') {
         return res.status(409).json({ success: false, message: 'Tipe tempat dengan nama tersebut sudah ada.' });
       }
-      res.status(500).json({ success: false, error: error.message });
+      mapError(error, res, 'Error on venue types');
     }
   },
 
@@ -39,7 +40,7 @@ const venueTypeController = {
       if (error.code === '23503') {
         return res.status(409).json({ success: false, message: 'Tipe ini masih dipakai oleh venue dan tidak dapat dihapus.' });
       }
-      res.status(500).json({ success: false, error: error.message });
+      mapError(error, res, 'Error on venue types');
     }
   },
 };

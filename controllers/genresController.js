@@ -1,4 +1,5 @@
 const Genre = require('../models/genres.js');
+const { mapError } = require('../utils/httpError.js');
 
 const genresController = {
   getAllGenres: async (req, res) => {
@@ -6,7 +7,7 @@ const genresController = {
       const result = await Genre.getAllGenres();
       res.status(200).json({ success: true, message: 'Daftar genre musik', data: result });
     } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
+      mapError(error, res, 'Error on genres');
     }
   },
 
@@ -19,7 +20,7 @@ const genresController = {
       }
       res.status(200).json({ success: true, message: 'Detail genre', data: result });
     } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
+      mapError(error, res, 'Error on genres');
     }
   },
 
@@ -35,7 +36,7 @@ const genresController = {
       if (error.code === '23505') {
         return res.status(409).json({ success: false, message: 'Genre dengan nama tersebut sudah ada.' });
       }
-      res.status(500).json({ success: false, error: error.message });
+      mapError(error, res, 'Error on genres');
     }
   },
 
@@ -53,7 +54,7 @@ const genresController = {
       if (error.code === '23505') {
         return res.status(409).json({ success: false, message: 'Genre dengan nama tersebut sudah ada.' });
       }
-      res.status(500).json({ success: false, error: error.message });
+      mapError(error, res, 'Error on genres');
     }
   },
 
@@ -70,7 +71,7 @@ const genresController = {
       if (error.code === '23503') {
         return res.status(409).json({ success: false, message: 'Genre ini masih dipakai oleh event dan tidak dapat dihapus.' });
       }
-      res.status(500).json({ success: false, error: error.message });
+      mapError(error, res, 'Error on genres');
     }
   },
 };

@@ -1,28 +1,36 @@
 const pino = require('pino');
 const pinoHttp = require('pino-http');
 
-// Basic pino logger ke console dengan format JSON
+// Logger JSON (pino). Header Authorization/Cookie dan password TIDAK boleh masuk log:
+// token JWT di log = siapa pun yang bisa membaca log bisa menyamar jadi user.
 const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  // format JSON secara default di pino
+  level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'test' ? 'silent' : 'info'),
+  redact: {
+    paths: [
+      'req.headers.authorization',
+      'req.headers.cookie',
+      'res.headers["set-cookie"]',
+      '*.password',
+      '*.signature_key',
+      '*.token'
+    ],
+    censor: '[REDACTED]'
+  }
 });
 
-// Attach pinoHttp ke Express untuk request auto-logging
+// Log request otomatis. Hanya method+url+status yang dicatat (tanpa body).
 const loggerMiddleware = pinoHttp({
   logger,
-  autoTranspire: true,
-  serializers: pino.HttpSerializers
+  serializers: {
+    req: (req) => ({ id: req.id, method: req.method, url: req.url }),
+    res: (res) => ({ statusCode: res.statusCode })
+  }
 });
 
-// Export pino logger instance and its methods
-// Gunakan logging langsung melalui logger.object untuk menghindari 
-// masalah this[writeSym] di Node.js v24
 module.exports = {
   logger,
   loggerMiddleware,
-  // Export level constants untuk kemudahan penamaan level
   level: logger.level,
-  // Metode logging yang bisa langsung digunakan
   info: (...args) => logger.info(...args),
   warn: (...args) => logger.warn(...args),
   error: (...args) => logger.error(...args)

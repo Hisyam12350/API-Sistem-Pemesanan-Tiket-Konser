@@ -7,6 +7,7 @@
     "start": "node app.js",
     "dev": "node --watch app.js",
     "test": "cross-env NODE_ENV=test jest --detectOpenHandles",
+    "test:unit": "cross-env NODE_ENV=test SKIP_DB_SETUP=true jest tests/security",
     "test:watch": "cross-env NODE_ENV=test jest --watch",
     "test:coverage": "cross-env NODE_ENV=test jest --coverage"
   },
@@ -27,7 +28,7 @@
     "express-rate-limit": "^8.7.4",
     "helmet": "^6.2.0",
     "jsonwebtoken": "^9.0.3",
-    "multer": "^2.2.0",
+    "multer": "^2.5.0",
     "pg": "^8.22.0",
     "pino": "^10.4.0",
     "pino-http": "^11.0.0",

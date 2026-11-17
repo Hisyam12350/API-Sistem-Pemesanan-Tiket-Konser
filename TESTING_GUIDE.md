@@ -34,7 +34,10 @@ Sebelum melakukan pengujian manual, Anda dapat menjalankan seluruh suite penguji
 ```bash
 npm test
 ```
-**Hasil yang diharapkan**: 4 test suites lulus (16 tests passed).
+`npm test` menjalankan seluruh tes, termasuk tes integrasi yang memerlukan database development. Untuk tes keamanan saja tanpa koneksi database:
+```bash
+npm run test:unit
+```
 
 ### 1.3 Pastikan Migrasi Database Dijalankan
 Di **Supabase SQL Editor**, pastikan file migrasi telah dieksekusi berurutan:
@@ -44,6 +47,9 @@ Di **Supabase SQL Editor**, pastikan file migrasi telah dieksekusi berurutan:
 - `config/migrations/004_payments_midtrans.sql`
 - `config/migrations/005_scanner_indexes.sql`
 - `config/migrations/006_pg_cron_jobs.sql`
+- `config/migrations/007_security_hardening.sql`
+- `config/migrations/008_business_rules_and_hardening.sql`
+- `config/migrations/009_scanner_event_assignments.sql` (wajib untuk pembatasan event Scanner)
 
 ---
 
@@ -345,14 +351,31 @@ curl -X POST http://localhost:5000/api/auth/login \
 
 ---
 
-### 5.2 Check-in Tiket (Scan QR)
+### 5.2 Tugaskan Scanner ke Event (Admin)
+Scanner harus ditugaskan ke event sebelum dapat check-in atau melihat rekap event. Ambil `scanner_id` melalui `GET /api/users`, lalu tugaskan:
+```bash
+curl -X POST http://localhost:5000/api/scanner/events/1/assignments \
+  -H "Authorization: Bearer <TOKEN_ADMIN>" \
+  -H "Content-Type: application/json" \
+  -d '{"scanner_id":7}'
+```
+Daftar petugas yang ditugaskan dapat dilihat dengan `GET /api/scanner/events/1/assignments`. Scanner dapat mengambil daftar event miliknya melalui:
+```bash
+curl -X GET http://localhost:5000/api/scanner/assigned-events \
+  -H "Authorization: Bearer <TOKEN_SCANNER>"
+```
+
+---
+
+### 5.3 Check-in Tiket (Scan QR)
 Kirimkan `kode_unik` hasil pembacaan QR Code (misal: `TKT-1-1-ABC123`):
 ```bash
 curl -X POST http://localhost:5000/api/scanner/check-in \
   -H "Authorization: Bearer <TOKEN_SCANNER>" \
   -H "Content-Type: application/json" \
   -d '{
-    "kode_unik": "TKT-1-1-ABC123"
+    "kode_unik": "TKT-1-1-ABC123",
+    "event_id": 1
   }'
 ```
 **Response sukses (200)**:
@@ -376,13 +399,13 @@ curl -X POST http://localhost:5000/api/scanner/check-in \
 
 ---
 
-### 5.3 Coba Scan Tiket yang Sudah Pernah Di-scan (Double Entry Prevention)
+### 5.4 Coba Scan Tiket yang Sudah Pernah Di-scan (Double Entry Prevention)
 Kirim request yang sama sekali lagi:
 ```bash
 curl -X POST http://localhost:5000/api/scanner/check-in \
   -H "Authorization: Bearer <TOKEN_SCANNER>" \
   -H "Content-Type: application/json" \
-  -d '{"kode_unik":"TKT-1-1-ABC123"}'
+  -d '{"kode_unik":"TKT-1-1-ABC123","event_id":1}'
 ```
 **Expected Error (409 Conflict)**:
 ```json
@@ -394,7 +417,7 @@ curl -X POST http://localhost:5000/api/scanner/check-in \
 
 ---
 
-### 5.4 Riwayat Tiket yang Dipindai Petugas Ini
+### 5.5 Riwayat Tiket yang Dipindai Petugas Ini
 ```bash
 curl -X GET "http://localhost:5000/api/scanner/scanned-tickets?page=1&limit=20" \
   -H "Authorization: Bearer <TOKEN_SCANNER>"
@@ -456,10 +479,23 @@ Jalankan request login berulang-ulang lebih dari 10 kali dalam 15 menit. Request
 
 | Skenario | Endpoint & Body | Hasil yang Diharapkan |
 |---|---|---|
-| **Eskalasi Role Ditolak** | `POST /api/auth/register` dengan `role: "SuperAdmin"` | `403 Forbidden` (*Role Admin/SuperAdmin tidak dapat didaftarkan melalui registrasi publik*) |
+| **Eskalasi Role via Register** | `POST /api/auth/register` dengan `role: "SuperAdmin"` (atau `"Admin"` / `"Scanner"`) | `201`, tetapi akun yang terbentuk **selalu `Customer`** (field `role` diabaikan) |
+| **Eskalasi Role via Update User** | Login sebagai Customer, `PUT /api/users/<id-sendiri>` dengan `{"role":"SuperAdmin"}` | `403 Forbidden` (*Anda tidak diizinkan mengubah role.*) |
+| **Ambil Alih Akun Orang Lain** | Login sebagai Customer, `PUT /api/users/<id-lain>` dengan `{"password":"x"}` | `403 Forbidden` (*Anda hanya boleh mengubah akun Anda sendiri.*) |
+| **Webhook Palsu** | `POST /api/payments/notification` dengan `signature_key` asal-asalan | `403 Forbidden` (*Signature tidak valid.*), order tetap `pending` |
+| **Scan Ganda** | Dua scanner memindai QR yang sama bersamaan | Satu `200`, sisanya `409` (*Tiket sudah dipindai.*) |
 | **Akses Tiket Orang Lain** | `GET /api/tickets/:id` milik user lain | `403 Forbidden` (*Akses ditolak. Anda bukan pemilik tiket ini.*) |
 | **Rebutan Kursi (Seat Conflict)** | Dua user melakukan lock pada kursi ID yang sama | User ke-2 mendapat `409 Conflict` (*Sebagian kursi tidak tersedia*) |
 | **Checkout Kursi Kadaluwarsa** | Buat order setelah masa lock 15 menit habis | `409 Conflict` (*Lock kursi telah kadaluwarsa*) |
+| **Scan di event salah / belum waktunya / order tidak lunas** | `POST /api/scanner/check-in` dengan `event_id` berbeda, jauh sebelum acara, atau order refund | `409 Conflict` |
+| **Scanner tanpa assignment** | Scanner check-in atau melihat rekap event yang belum ditugaskan Admin | `403 Forbidden` |
+| **Pengelolaan assignment Scanner** | Admin melihat, menugaskan, atau mencabut Scanner di event | `GET` / `POST` / `DELETE /api/scanner/events/:eventId/assignments` sesuai aksi |
+| **Menimbun Kursi (hoarding)** | Lock lebih dari `MAX_SEATS_PER_ORDER` (default 6) kursi untuk satu event | `400`/`409` (*Maksimal 6 kursi ...*) |
+| **Beli Setelah Event Lewat/Ditutup** | `POST /api/seats/lock` pada event berstatus `completed` atau waktunya sudah lewat | `409` (*Penjualan tiket untuk event ini sudah ditutup.*) |
+| **Bayar Setelah Order Expired** | Bayar di Snap setelah batas waktu order | Transaksi Midtrans ikut kedaluwarsa (`expiry`). Bila uang tetap masuk, tampil di `GET /api/payments/needs-refund` |
+| **Token Lama Setelah User Dihapus / Role Diturunkan** | Pakai token lama user tsb | `401` / `403` (role dibaca dari database, bukan dari token) |
+| **Upload SVG / file palsu sebagai banner** | `POST /api/events` dengan file `.svg` atau HTML bernama `.png` | `400` (hanya JPG/PNG/WEBP dengan isi file valid) |
+| **Hapus Event/Kategori yang Sudah Ada Order** | `DELETE /api/events/:id` | `409 Conflict` |
 | **Tiket Palsu** | `POST /api/scanner/check-in` dengan `kode_unik: "INVALID"` | `404 Not Found` (*Tiket tidak ditemukan*) |
 | **Customer Mengakses Scanner** | `POST /api/scanner/check-in` pakai token Customer | `403 Forbidden` (*Akses dilarang. Membutuhkan hak akses: Scanner, Admin, SuperAdmin*) |
 
@@ -490,3 +526,7 @@ Jalankan request login berulang-ulang lebih dari 10 kali dalam 15 menit. Request
 | `/api/tickets/:id/download` | GET | Customer, Admin | Download QR Code file PNG |
 | `/api/scanner/check-in` | POST | Scanner, Admin | Scan & validasi QR Code tiket |
 | `/api/scanner/scanned-tickets` | GET | Scanner, Admin | Riwayat tiket dipindai scanner |
+| `/api/scanner/assigned-events` | GET | Scanner | Daftar event yang ditugaskan ke scanner |
+| `/api/scanner/events/:eventId/scanned` | GET | Scanner, Admin, SuperAdmin | Rekap scan per event (Scanner harus ditugaskan) |
+| `/api/scanner/events/:eventId/assignments` | GET, POST | Admin, SuperAdmin | Lihat atau tugaskan scanner ke event |
+| `/api/scanner/events/:eventId/assignments/:scannerId` | DELETE | Admin, SuperAdmin | Cabut penugasan scanner |

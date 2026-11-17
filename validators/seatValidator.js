@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { MAX_SEATS_PER_ORDER, MAX_LOCK_MINUTES } = require('../config/limits.js');
 
 const emptyStringToNull = (val) => val === '' ? null : val;
 
@@ -10,12 +11,12 @@ const generateSeatsSchema = z.object({
 });
 
 const lockSeatsSchema = z.object({
-  seat_ids: z.array(z.coerce.number().int().positive('seat_id harus angka positif')).min(1, 'seat_ids minimal 1 item'),
-  minutes: z.preprocess(emptyStringToNull, z.coerce.number().int().positive('Minutes harus bilangan bulat positif').max(60, 'Maksimal 60 menit').nullable()).optional()
+  seat_ids: z.array(z.coerce.number().int().positive('seat_id harus angka positif')).min(1, 'seat_ids minimal 1 item').max(MAX_SEATS_PER_ORDER, `Maksimal ${MAX_SEATS_PER_ORDER} kursi per permintaan`),
+  minutes: z.preprocess(emptyStringToNull, z.coerce.number().int().positive('Minutes harus bilangan bulat positif').max(MAX_LOCK_MINUTES, `Maksimal ${MAX_LOCK_MINUTES} menit`).nullable()).optional()
 });
 
 const unlockSeatsSchema = z.object({
-  seat_ids: z.array(z.coerce.number().int().positive('seat_id harus angka positif')).min(1, 'seat_ids minimal 1 item')
+  seat_ids: z.array(z.coerce.number().int().positive('seat_id harus angka positif')).min(1, 'seat_ids minimal 1 item').max(MAX_SEATS_PER_ORDER, `Maksimal ${MAX_SEATS_PER_ORDER} kursi per permintaan`)
 });
 
 module.exports = {

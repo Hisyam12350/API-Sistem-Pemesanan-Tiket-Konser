@@ -14,8 +14,8 @@ router.get('/', venuesController.getVenues);
 router.get('/:id', venuesController.getVenueById);
 
 // Admin kelola venue manual (+ upload gambar via field 'gambar')
-router.post('/', verifyToken, authorizeRoles('Admin', 'SuperAdmin'), upload.single('gambar'), uploadLimiter, validate(createVenueSchema), venuesController.createVenue);
-router.put('/:id', verifyToken, authorizeRoles('Admin', 'SuperAdmin'), upload.single('gambar'), uploadLimiter, validate(updateVenueSchema), venuesController.updateVenue);
+router.post('/', verifyToken, authorizeRoles('Admin', 'SuperAdmin'), uploadLimiter, upload.single('gambar'), validate(createVenueSchema), venuesController.createVenue);
+router.put('/:id', verifyToken, authorizeRoles('Admin', 'SuperAdmin'), uploadLimiter, upload.single('gambar'), validate(updateVenueSchema), venuesController.updateVenue);
 router.delete('/:id', verifyToken, authorizeRoles('Admin', 'SuperAdmin'), venuesController.deleteVenue);
 
 module.exports = router;

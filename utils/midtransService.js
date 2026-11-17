@@ -61,34 +61,75 @@ async function getTransactionStatus(orderId) {
     err.status = res.status;
     throw err;
   }
+  // Midtrans sering membalas HTTP 200 dengan status_code "404" di dalam body
+  // (transaksi belum pernah dibuat/dipilih metode bayarnya). Jangan anggap itu data valid.
+  if (data && String(data.status_code) === '404') {
+    const err = new Error('Transaksi tidak ditemukan di Midtrans.');
+    err.status = 404;
+    throw err;
+  }
   return data;
 }
 
+// Batalkan transaksi yang belum dibayar di Midtrans (dipanggil saat order dibatalkan user), supaya
+// pembeli tidak bisa membayar order yang sudah dibatalkan. Best-effort: 404 (belum ada transaksi
+// aktif) dianggap sukses; error lain dilempar agar pemanggil bisa mencatatnya.
+async function cancelTransaction(orderId) {
+  const serverKey = getServerKey();
+  const auth = Buffer.from(serverKey + ':').toString('base64');
+  const res = await fetch(`${apiBaseUrl()}/${encodeURIComponent(orderId)}/cancel`, {
+    method: 'POST',
+    headers: { Accept: 'application/json', Authorization: `Basic ${auth}` }
+  });
+  const data = await res.json().catch(() => ({}));
+  const code = String(data && data.status_code);
+  if (code === '404') return { cancelled: false, reason: 'not_found' };
+  if (!res.ok || !['200', '412'].includes(code)) {
+    const err = new Error('Gagal membatalkan transaksi di Midtrans.');
+    err.status = 502;
+    throw err;
+  }
+  return { cancelled: code === '200', data };
+}
+
+// Spesifikasi Midtrans: SHA512(order_id + status_code + gross_amount + ServerKey)
+// - gross_amount dipakai PERSIS seperti string yang diterima dari Midtrans (mis. "10000.00").
+// - Perbandingan memakai timingSafeEqual agar tidak bocor lewat selisih waktu.
 function verifySignature({ order_id, status_code, gross_amount, signature_key }) {
-  const keysToTry = [getSignatureSecretKey(), getServerKey()].filter(Boolean);
-  const normalizedAmount = String(Number(gross_amount));
-  const base = order_id + status_code;
+  if (
+    typeof order_id !== 'string' ||
+    typeof status_code !== 'string' ||
+    typeof gross_amount !== 'string' ||
+    typeof signature_key !== 'string' ||
+    !/^[0-9a-f]{128}$/i.test(signature_key)
+  ) {
+    return false;
+  }
+
+  const received = Buffer.from(signature_key.toLowerCase(), 'hex');
+  const keysToTry = [...new Set([getSignatureSecretKey(), getServerKey()].filter(Boolean))];
 
   for (const key of keysToTry) {
-    const payloads = [
-      base + gross_amount + key,
-      base + normalizedAmount + key
-    ];
-    if (payloads.some((payload) =>
-      crypto.createHash('sha512').update(payload).digest('hex') === signature_key
-    )) return true;
-
-    if ([gross_amount, normalizedAmount].some((amt) =>
-      crypto.createHmac('sha512', key).update(base + amt).digest('hex') === signature_key
-    )) return true;
+    const expected = crypto
+      .createHash('sha512')
+      .update(order_id + status_code + gross_amount + key)
+      .digest();
+    if (expected.length === received.length && crypto.timingSafeEqual(expected, received)) {
+      return true;
+    }
   }
 
   return false;
 }
 
-function mapStatus(transaction_status) {
+function mapStatus(transaction_status, fraud_status) {
   switch (transaction_status) {
     case 'capture':
+      // Pembayaran kartu: 'capture' baru benar-benar sukses bila fraud_status 'accept'.
+      // 'challenge' = menunggu review manual di dashboard Midtrans (JANGAN terbitkan tiket).
+      if (fraud_status === 'challenge') return 'pending';
+      if (fraud_status === undefined || fraud_status === null || fraud_status === 'accept') return 'success';
+      return 'failed';
     case 'settlement':
       return 'success';
     case 'pending':
@@ -100,11 +141,16 @@ function mapStatus(transaction_status) {
     case 'expire':
       return 'expired';
     case 'refund':
+    case 'chargeback':
+      // Uang dikembalikan penuh ke pembeli -> tiket harus dibatalkan (lihat Payment.refundOrder).
+      return 'refunded';
     case 'partial_refund':
-      return 'cancelled';
+    case 'partial_chargeback':
+      // Hanya sebagian yang dikembalikan: tidak bisa diputuskan otomatis tiket mana yang batal.
+      return 'partial_refund';
     default:
       return 'pending';
   }
 }
 
-module.exports = { createTransaction, getTransactionStatus, verifySignature, mapStatus, isProduction };
+module.exports = { createTransaction, getTransactionStatus, cancelTransaction, verifySignature, mapStatus, isProduction };

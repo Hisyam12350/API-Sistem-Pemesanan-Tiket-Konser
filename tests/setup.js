@@ -1,6 +1,7 @@
 const pool = require('../config/db');
 
 beforeAll(async () => {
+  if (process.env.SKIP_DB_SETUP === 'true') return;
   try {
     const client = await pool.connect();
     client.release(true);

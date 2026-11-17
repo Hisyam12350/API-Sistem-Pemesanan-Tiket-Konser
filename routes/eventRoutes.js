@@ -16,8 +16,8 @@ router.post(
   '/',
   verifyToken,
   authorizeRoles('Admin', 'SuperAdmin'),
-  upload.single('banner'),
   uploadLimiter,
+  upload.single('banner'),
   validate(createEventSchema),
   eventController.createEvents
 );
@@ -26,8 +26,8 @@ router.put(
   '/:id',
   verifyToken,
   authorizeRoles('Admin', 'SuperAdmin'),
-  upload.single('banner'),
   uploadLimiter,
+  upload.single('banner'),
   validate(updateEventSchema),
   eventController.updateEvents
 );

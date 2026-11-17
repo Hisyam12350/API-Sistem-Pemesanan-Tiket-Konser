@@ -2,23 +2,32 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET, JWT_EXPIRES_IN } = require('../config/jwt');
 const userModel = require('../models/userModel');
+const { invalidateUser } = require('../middleware/authMiddleware');
+const { mapError } = require('../utils/httpError');
 
-const VALID_ROLES = ['SuperAdmin', 'Admin', 'Customer', 'Scanner'];
+// Biaya bcrypt 12 (2^12 putaran): lebih mahal bagi penyerang yang membobol hash; ~250ms per hash, wajar untuk login.
+const BCRYPT_ROUNDS = 12;
+
+// Hash "umpan" untuk login dengan email yang tidak terdaftar: bcrypt.compare tetap dijalankan sehingga waktu
+// respons email-tidak-ada sama dengan email-ada-password-salah (mencegah enumerasi email lewat selisih waktu).
+const DUMMY_HASH = bcrypt.hashSync('dummy-password-untuk-timing', BCRYPT_ROUNDS);
+
+function signToken(user) {
+  // Payload minimal; role TIDAK dipercaya dari token (diambil dari DB di verifyToken).
+  return jwt.sign(
+    { id: user.id, email: user.email, role: user.role },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN, algorithm: 'HS256' }
+  );
+}
 
 const authController = {
   async register(req, res) {
     try {
-      const { username, email, password } = req.body;
-
-      if (!username || !email || !password) {
-        return res.status(400).json({
-          success: false,
-          message: 'Username, email, dan password wajib diisi.'
-        });
-      }
-
-      // Force Customer role for all public registrations
-      const assignedRole = 'Customer';
+      // Pakai data hasil validasi Zod (req.validated), bukan req.body mentah.
+      // `role` sengaja TIDAK dibaca dari klien: registrasi publik selalu menghasilkan 'Customer'.
+      // Role Scanner/Admin hanya bisa diberikan lewat PUT /api/users/:id oleh SuperAdmin/Admin.
+      const { username, email, password } = req.validated;
 
       const existingUser = await userModel.findUserByEmail(email);
       if (existingUser) {
@@ -28,27 +37,16 @@ const authController = {
         });
       }
 
-      const saltRounds = 10;
-      const hashedPassword = await bcrypt.hash(password, saltRounds);
+      const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
       const newUser = await userModel.createUser({
         username,
         email,
         password: hashedPassword,
-        role: assignedRole  // Always 'Customer'
+        role: 'Customer'
       });
 
-      // Generate JWT token (same as login)
-      const payload = {
-        id: newUser.id,
-        email: newUser.email,
-        role: newUser.role
-      };
-
-      const secretKey = JWT_SECRET;
-      const expiresIn = JWT_EXPIRES_IN;
-
-      const token = jwt.sign(payload, secretKey, { expiresIn });
+      const token = signToken(newUser);
 
       return res.status(201).json({
         success: true,
@@ -63,52 +61,32 @@ const authController = {
         data: newUser
       });
     } catch (error) {
-      console.error('Error on register:', error.message);
-      return res.status(500).json({
-        success: false,
-        message: 'Terjadi kesalahan pada server saat registrasi.',
-        error: error.message
-      });
+      // Dua registrasi bersamaan dengan email yang sama: unique constraint DB yang menang.
+      if (error && error.code === '23505') {
+        return res.status(400).json({
+          success: false,
+          message: 'Email sudah terdaftar. Silakan gunakan email lain atau login.'
+        });
+      }
+      return mapError(error, res, 'Error on register');
     }
   },
 
   async login(req, res) {
     try {
-      const { email, password } = req.body;
-
-      if (!email || !password) {
-        return res.status(400).json({
-          success: false,
-          message: 'Email dan password wajib diisi.'
-        });
-      }
+      const { email, password } = req.validated;
 
       const user = await userModel.findUserByEmail(email);
-      if (!user) {
+      const isPasswordValid = await bcrypt.compare(password, user ? user.password : DUMMY_HASH);
+
+      if (!user || !isPasswordValid) {
         return res.status(401).json({
           success: false,
           message: 'Email atau password salah.'
         });
       }
 
-      const isPasswordValid = await bcrypt.compare(password, user.password);
-      if (!isPasswordValid) {
-        return res.status(401).json({
-          success: false,
-          message: 'Email atau password salah.'
-        });
-      }
-
-      const payload = {
-        id: user.id,
-        email: user.email,
-        role: user.role
-      };
-
-      const secretKey = JWT_SECRET;
-      const expiresIn = JWT_EXPIRES_IN;
-
-      const token = jwt.sign(payload, secretKey, { expiresIn });
+      const token = signToken(user);
 
       return res.status(200).json({
         success: true,
@@ -122,38 +100,46 @@ const authController = {
         }
       });
     } catch (error) {
-      console.error('Error on login:', error.message);
-      return res.status(500).json({
-        success: false,
-        message: 'Terjadi kesalahan pada server saat login.',
-        error: error.message
-      });
+      return mapError(error, res, 'Error on login');
     }
   },
 
   async getProfile(req, res) {
     try {
-      const userId = req.user.id;
-      const user = await userModel.findUserById(userId);
+      const user = await userModel.findUserById(req.user.id);
 
       if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: 'User tidak ditemukan.'
-        });
+        return res.status(404).json({ success: false, message: 'User tidak ditemukan.' });
       }
 
-      return res.status(200).json({
-        success: true,
-        data: user
-      });
+      return res.status(200).json({ success: true, data: user });
     } catch (error) {
-      console.error('Error on getProfile:', error.message);
-      return res.status(500).json({
-        success: false,
-        message: 'Terjadi kesalahan pada server saat mengambil profil.',
-        error: error.message
-      });
+      return mapError(error, res, 'Error on getProfile');
+    }
+  },
+
+  // PUT /api/auth/change-password — user mengganti password sendiri (wajib menyertakan password lama).
+  async changePassword(req, res) {
+    try {
+      const { old_password, new_password } = req.validated;
+
+      const record = await userModel.getPasswordHashById(req.user.id);
+      if (!record) {
+        return res.status(404).json({ success: false, message: 'User tidak ditemukan.' });
+      }
+
+      const ok = await bcrypt.compare(old_password, record.password);
+      if (!ok) {
+        return res.status(401).json({ success: false, message: 'Password lama salah.' });
+      }
+
+      const hashed = await bcrypt.hash(new_password, BCRYPT_ROUNDS);
+      await userModel.updateUser(req.user.id, { password: hashed });
+      invalidateUser(req.user.id);
+
+      return res.status(200).json({ success: true, message: 'Password berhasil diubah.' });
+    } catch (error) {
+      return mapError(error, res, 'Error on changePassword');
     }
   }
 };

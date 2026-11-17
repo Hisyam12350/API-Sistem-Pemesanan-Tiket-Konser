@@ -1,4 +1,5 @@
 const { generateSVG, generatePNGBuffer } = require('../utils/qrCodeGenerator.js');
+const { mapError } = require('../utils/httpError.js');
 const pool = require('../config/db.js');
 
 const Ticket = {
@@ -70,8 +71,7 @@ const ticketController = {
         data: tickets
       });
     } catch (err) {
-      console.error('Get tickets by user failed:', err.message);
-      return res.status(500).json({ success: false, error: err.message });
+      return mapError(err, res, 'Get tickets by user failed:');
     }
   },
 
@@ -102,8 +102,7 @@ const ticketController = {
         }
       });
     } catch (err) {
-      console.error('Get ticket by ID failed:', err.message);
-      return res.status(500).json({ success: false, error: err.message });
+      return mapError(err, res, 'Get ticket by ID failed:');
     }
   },
 
@@ -133,8 +132,7 @@ const ticketController = {
 
       res.send(pngBuffer);
     } catch (err) {
-      console.error('Download ticket QR failed:', err.message);
-      return res.status(500).json({ success: false, error: err.message });
+      return mapError(err, res, 'Download ticket QR failed:');
     }
   }
 };

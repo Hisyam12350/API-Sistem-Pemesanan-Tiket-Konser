@@ -1,6 +1,9 @@
 const Venue = require('../models/venues.js');
 const VenueType = require('../models/venueTypes.js');
 const storageService = require('../utils/storageService');
+const { mapError } = require('../utils/httpError.js');
+
+const VENUE_BUCKET = 'venues';
 
 const venuesController = {
   getVenues: async (req, res) => {
@@ -9,7 +12,7 @@ const venuesController = {
       const result = await Venue.getVenues({ venue_type_id, search, kota, page, limit });
       res.status(200).json({ success: true, message: 'Daftar tempat', data: result.data, pagination: result.pagination });
     } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
+      mapError(error, res, 'Error on venues');
     }
   },
 
@@ -22,7 +25,7 @@ const venuesController = {
       }
       res.status(200).json({ success: true, message: 'Detail tempat', data: result });
     } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
+      mapError(error, res, 'Error on venues');
     }
   },
 
@@ -39,19 +42,23 @@ const venuesController = {
         return res.status(400).json({ success: false, message: 'kapasitas harus berupa angka lebih besar dari 0.' });
       }
 
-      // Upload gambar ke Supabase Storage jika ada file yang diunggah
-      if (req.file) {
-        gambar_url = await storageService.uploadFile(req.file, 'venues', 'venues');
-      }
-
       const tipe = await VenueType.getTypeById(venue_type_id);
       if (!tipe) {
         return res.status(404).json({ success: false, message: 'Tipe tempat dengan ID ' + venue_type_id + ' tidak ditemukan.' });
       }
-      const result = await Venue.createVenue({ venue_type_id, nama_venue, alamat, kota, kapasitas, gambar_url });
+      if (req.file) {
+        gambar_url = await storageService.uploadFile(req.file, VENUE_BUCKET, 'venues');
+      }
+      let result;
+      try {
+        result = await Venue.createVenue({ venue_type_id, nama_venue, alamat, kota, kapasitas, gambar_url });
+      } catch (dbErr) {
+        if (gambar_url) await storageService.deleteFile(gambar_url, VENUE_BUCKET);
+        throw dbErr;
+      }
       res.status(201).json({ success: true, message: 'Tempat berhasil dibuat', data: result });
     } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
+      mapError(error, res, 'Error on venues');
     }
   },
 
@@ -75,20 +82,28 @@ const venuesController = {
         return res.status(400).json({ success: false, message: 'kapasitas harus berupa angka lebih besar dari 0.' });
       }
 
-      // Upload gambar baru atau hapus gambar lama jika ada file baru
+      // Upload baru -> update DB -> hapus gambar lama (gambar lama tidak hilang bila update gagal)
+      let uploaded = null;
       if (req.file) {
-        if (existing.gambar_url) {
-          await storageService.deleteFile(existing.gambar_url, 'venues');
-        }
-        gambar_url = await storageService.uploadFile(req.file, 'venues', 'venues');
+        uploaded = await storageService.uploadFile(req.file, VENUE_BUCKET, 'venues');
+        gambar_url = uploaded;
       } else {
         gambar_url = existing.gambar_url;
       }
 
-      const result = await Venue.updateVenue(id, { venue_type_id, nama_venue, alamat, kota, kapasitas, gambar_url });
+      let result;
+      try {
+        result = await Venue.updateVenue(id, { venue_type_id, nama_venue, alamat, kota, kapasitas, gambar_url });
+      } catch (dbErr) {
+        if (uploaded) await storageService.deleteFile(uploaded, VENUE_BUCKET);
+        throw dbErr;
+      }
+      if (uploaded && existing.gambar_url) {
+        await storageService.deleteFile(existing.gambar_url, VENUE_BUCKET);
+      }
       res.status(200).json({ success: true, message: 'Tempat berhasil diperbarui', data: result });
     } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
+      mapError(error, res, 'Error on venues');
     }
   },
 
@@ -100,12 +115,15 @@ const venuesController = {
         return res.status(404).json({ success: false, message: 'Tempat dengan ID ' + id + ' tidak ditemukan.' });
       }
       const result = await Venue.deleteVenue(id);
+      if (existing.gambar_url) {
+        await storageService.deleteFile(existing.gambar_url, VENUE_BUCKET);
+      }
       res.status(200).json({ success: true, message: 'Tempat berhasil dihapus', data: result });
     } catch (error) {
       if (error.code === '23503') {
         return res.status(409).json({ success: false, message: 'Tempat ini masih dipakai oleh event dan tidak dapat dihapus.' });
       }
-      res.status(500).json({ success: false, error: error.message });
+      mapError(error, res, 'Error on venues');
     }
   },
 };

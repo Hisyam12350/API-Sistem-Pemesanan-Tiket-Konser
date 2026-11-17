@@ -1,6 +1,10 @@
--- 1. Hapus jika ada yang lama
-DROP TABLE IF EXISTS tickets, payments, order_item_seats, order_items, orders, seats, ticket_categories, events, venue_types, venues, genres, users CASCADE;
-DROP TYPE IF EXISTS Role, event_status, order_status, payment_status, ticket_status, seat_status CASCADE;
+-- =====================================================================
+-- PERINGATAN: file ini untuk instalasi BARU pada database KOSONG.
+-- Baris DROP di bawah menghapus SEMUA data dan sengaja dinonaktifkan (di-comment).
+-- Aktifkan HANYA di database development yang boleh dikosongkan.
+-- =====================================================================
+-- DROP TABLE IF EXISTS tickets, payments, order_item_seats, order_items, orders, seats, ticket_categories, events, venue_types, venues, genres, users CASCADE;
+-- DROP TYPE IF EXISTS Role, event_status, order_status, payment_status, ticket_status, seat_status CASCADE;
 
 -- 2. Buat Tipe Enum
 CREATE TYPE Role AS ENUM ('SuperAdmin', 'Admin', 'Customer', 'Scanner');
@@ -17,20 +21,6 @@ CREATE TABLE users (
   email VARCHAR UNIQUE NOT NULL,
   password VARCHAR NOT NULL,
   role Role DEFAULT 'Customer',
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE events (
-  id BIGSERIAL PRIMARY KEY,
-  nama_event TEXT NOT NULL,
-  lokasi TEXT,
-  waktu_event TIMESTAMPTZ NOT NULL,
-  banner_url TEXT,
-  status event_status DEFAULT 'upcoming',
-  venue_id INT8 REFERENCES venues(id) ON DELETE RESTRICT,
-  genre_id INT8 REFERENCES genres(id) ON DELETE SET NULL,
-  deskripsi TEXT,
-  detail_lokasi TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -72,6 +62,20 @@ CREATE TABLE venues (
   kota TEXT,
   kapasitas INT,
   gambar_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE events (
+  id BIGSERIAL PRIMARY KEY,
+  nama_event TEXT NOT NULL,
+  lokasi TEXT,
+  waktu_event TIMESTAMPTZ NOT NULL,
+  banner_url TEXT,
+  status event_status DEFAULT 'upcoming',
+  venue_id INT8 REFERENCES venues(id) ON DELETE RESTRICT,
+  genre_id INT8 REFERENCES genres(id) ON DELETE SET NULL,
+  deskripsi TEXT,
+  detail_lokasi TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

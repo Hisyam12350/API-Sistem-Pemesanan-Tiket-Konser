@@ -7,7 +7,8 @@ const validate = (schema, source = 'body') => (req, res, next) => {
       errors: result.error.flatten().fieldErrors
     });
   }
-  req.validated = result.data;
+  // Digabung (bukan ditimpa) supaya beberapa validate() berurutan (params + query + body) saling melengkapi.
+  req.validated = { ...(req.validated || {}), ...result.data };
   next();
 };
 

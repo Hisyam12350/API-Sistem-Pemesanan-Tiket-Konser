@@ -8,6 +8,14 @@ const { createPaymentSchema } = require('../validators/paymentValidator');
 // Public webhook (must be before /:orderId to avoid capture)
 router.post('/notification', paymentsController.notification);
 
+// Admin: pembayaran yang perlu di-refund manual (bayar setelah order expired). Harus di atas '/:orderId'.
+router.get(
+  '/needs-refund',
+  verifyToken,
+  authorizeRoles('Admin', 'SuperAdmin'),
+  paymentsController.listNeedsRefund
+);
+
 router.post(
   '/:orderId/create',
   verifyToken,

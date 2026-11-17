@@ -4,7 +4,7 @@ const userModel = {
   async createUser({ username, email, password, role = 'Customer' }) {
     const { data, error } = await supabase
       .from('users')
-      .insert([{ username, email, password, role }])
+      .insert([{ username, email: String(email).trim().toLowerCase(), password, role }])
       .select('id, username, email, role, created_at')
       .single();
 
@@ -16,7 +16,7 @@ const userModel = {
     const { data, error } = await supabase
       .from('users')
       .select('id, username, email, password, role, created_at')
-      .ilike('email', email)
+      .eq('email', String(email).trim().toLowerCase())
       .maybeSingle();
 
     if (error) throw error;
@@ -27,6 +27,17 @@ const userModel = {
     const { data, error } = await supabase
       .from('users')
       .select('id, username, email, role, created_at')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
+  },
+
+  async getPasswordHashById(id) {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, password')
       .eq('id', id)
       .maybeSingle();
 
@@ -47,7 +58,7 @@ const userModel = {
   async updateUser(id, { username, email, password, role }) {
     const updates = {};
     if (username) updates.username = username;
-    if (email) updates.email = email;
+    if (email) updates.email = String(email).trim().toLowerCase();
     if (password) updates.password = password;
     if (role) updates.role = role;
 
@@ -56,7 +67,7 @@ const userModel = {
       .update(updates)
       .eq('id', id)
       .select('id, username, email, role, created_at')
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
     return data;
@@ -68,7 +79,7 @@ const userModel = {
       .delete()
       .eq('id', id)
       .select('id, username, email')
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
     return data;
