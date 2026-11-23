@@ -22,3 +22,9 @@ Thumbs.db
 # Uploads sementara (jika ada)
 uploads/
 tmp/
+
+# Utility scripts (lokal)
+clean_events.js
+seed_concerts.js
+*.bak
+

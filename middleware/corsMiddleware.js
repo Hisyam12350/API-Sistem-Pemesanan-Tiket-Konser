@@ -17,8 +17,8 @@ function corsMiddleware() {
         return callback(null, true);
       }
 
-      // Di mode development/test, izinkan port lokal dinamis (localhost, 127.0.0.1, 10.0.2.2 emulator)
-      if (isDev && /^https?:\/\/(localhost|127\.0\.0\.1|10\.0\.2\.2)(:\d+)?$/.test(origin)) {
+      // Di mode development/test, izinkan port lokal dinamis (localhost, 127.0.0.1, 10.0.2.2 emulator, IP LAN)
+      if (isDev && /^https?:\/\/(localhost|127\.0\.0\.1|10\.0\.2\.2|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(origin)) {
         return callback(null, true);
       }
       
