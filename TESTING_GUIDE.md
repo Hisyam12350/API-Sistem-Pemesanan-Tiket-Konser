@@ -51,6 +51,10 @@ Di **Supabase SQL Editor**, pastikan file migrasi telah dieksekusi berurutan:
 - `config/migrations/008_business_rules_and_hardening.sql`
 - `config/migrations/009_scanner_event_assignments.sql` (wajib untuk pembatasan event Scanner)
 
+Pastikan pula di menu **Supabase Storage** sudah tersedia 2 bucket berstatus **Public**:
+- `events` (untuk upload banner konser via `POST`/`PUT /api/events`)
+- `venues` (untuk upload foto venue via `POST`/`PUT /api/venues`)
+
 ---
 
 ## 2. Flow 1: Admin (Setup Event & Tiket)
@@ -440,6 +444,12 @@ curl -X POST http://localhost:5000/api/payments/notification \
     "transaction_status": "settlement"
   }'
 ```
+> **Catatan Penting Keamanan Webhook**:
+> 1. Nilai `<sha512_signature>` dihitung dengan rumus `SHA512(order_id + status_code + gross_amount + MIDTRANS_SERVER_KEY)`. Anda dapat membuatnya via terminal:
+>    ```bash
+>    node -e "console.log(require('crypto').createHash('sha512').update('<midtrans_order_id>' + '200' + '1500000.00' + process.env.MIDTRANS_SERVER_KEY).digest('hex'))"
+>    ```
+> 2. Karena backend memverifikasi ulang status transaksi langsung ke **API Midtrans** (*source of truth*), `<midtrans_order_id>` yang diuji harus benar-benar sudah dibuat melalui `POST /api/payments/:orderId/create` di Midtrans Sandbox.
 
 ---
 
@@ -448,7 +458,7 @@ curl -X POST http://localhost:5000/api/payments/notification \
 ### 7.1 Validasi Input (Zod)
 Coba kirimkan format data yang salah:
 ```bash
-# Password kurang dari 6 karakter
+# Password kurang dari 8 karakter
 curl -X POST http://localhost:5000/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{"username":"test","email":"test@mail.com","password":"123"}'
@@ -459,7 +469,7 @@ curl -X POST http://localhost:5000/api/auth/register \
   "success": false,
   "message": "Validasi gagal",
   "errors": {
-    "password": ["Password minimal 6 karakter"]
+    "password": ["Password minimal 8 karakter"]
   }
 }
 ```
@@ -505,28 +515,41 @@ Jalankan request login berulang-ulang lebih dari 10 kali dalam 15 menit. Request
 
 | Endpoint | Method | Role Akses | Keterangan |
 |---|---|---|---|
-| `/api/auth/register` | POST | Publik | Registrasi akun baru (Customer) |
+| `/api/auth/register` | POST | Publik | Registrasi akun baru (otomatis role `Customer`) |
 | `/api/auth/login` | POST | Publik | Login & dapatkan token JWT |
-| `/api/auth/me` | GET | Authenticated | Profil user saat ini |
-| `/api/users` | GET | Admin, SuperAdmin | List semua user |
-| `/api/venues` | GET, POST | Publik (GET), Admin (POST) | Katalog & tambah tempat konser |
-| `/api/events` | GET, POST | Publik (GET), Admin (POST) | Katalog & buat event konser |
-| `/api/ticket-categories` | GET, POST | Publik (GET), Admin (POST) | Kategori tiket per event |
-| `/api/seats?kategori_id=` | GET | Publik | List kursi & status |
-| `/api/seats/generate` | POST | Admin, SuperAdmin | Generate nomor kursi |
-| `/api/seats/lock` | POST | Customer, Admin | Kunci kursi sementara |
-| `/api/seats/unlock` | POST | Customer, Admin | Bebaskan kunci kursi |
-| `/api/orders` | POST, GET | Customer, Admin | Checkout & riwayat pesanan |
-| `/api/orders/:id/cancel` | POST | Customer, Admin | Batalkan pesanan pending |
-| `/api/payments/:orderId/create` | POST | Customer, Admin | Buat Snap Token Midtrans |
-| `/api/payments/:orderId` | GET | Customer, Admin | Status & sinkronisasi pembayaran |
-| `/api/payments/notification` | POST | Publik | Webhook notifikasi Midtrans |
-| `/api/tickets` | GET | Customer, Admin | List e-ticket resmi milik user |
-| `/api/tickets/:id` | GET | Customer, Admin | Detail tiket + embed SVG QR Code |
-| `/api/tickets/:id/download` | GET | Customer, Admin | Download QR Code file PNG |
-| `/api/scanner/check-in` | POST | Scanner, Admin | Scan & validasi QR Code tiket |
-| `/api/scanner/scanned-tickets` | GET | Scanner, Admin | Riwayat tiket dipindai scanner |
+| `/api/auth/me` | GET | Authenticated | Profil user yang sedang login |
+| `/api/auth/change-password` | PUT | Authenticated | Ganti password sendiri (`old_password`, `new_password`) |
+| `/api/users` | GET | Admin, SuperAdmin | Daftar semua pengguna |
+| `/api/users/:id` | GET | Admin, SuperAdmin | Detail data pengguna |
+| `/api/users/:id` | PUT | Customer, Admin, SuperAdmin | Update pengguna (Customer: akun sendiri; Admin: +Customer/Scanner; SuperAdmin: semua) |
+| `/api/users/:id` | DELETE | SuperAdmin | Hapus akun pengguna |
+| `/api/venue-types` | GET, POST | Publik (GET), Admin/SuperAdmin (POST) | Daftar & tambah master tipe tempat konser |
+| `/api/venue-types/:id` | DELETE | Admin, SuperAdmin | Hapus tipe tempat konser |
+| `/api/venues` | GET, POST | Publik (GET), Admin/SuperAdmin (POST) | Katalog & tambah tempat konser (+ upload `gambar`) |
+| `/api/venues/:id` | GET, PUT, DELETE | Publik (GET), Admin/SuperAdmin (PUT/DELETE) | Detail, update, & hapus tempat konser |
+| `/api/genres` | GET, POST | Publik (GET), Admin/SuperAdmin (POST) | Daftar & tambah genre musik |
+| `/api/genres/:id` | GET, PUT, DELETE | Publik (GET), Admin/SuperAdmin (PUT/DELETE) | Detail, update, & hapus genre musik |
+| `/api/events` | GET, POST | Publik (GET), Admin/SuperAdmin (POST) | Katalog & buat event konser (+ upload `banner`) |
+| `/api/events/:id` | GET, PUT, DELETE | Publik (GET), Admin/SuperAdmin (PUT/DELETE) | Detail, update, & hapus event konser |
+| `/api/ticket-categories` | GET, POST | Publik (GET), Admin/SuperAdmin (POST) | Daftar (`?event_id=`) & buat kategori tiket |
+| `/api/ticket-categories/:id` | GET, PUT, DELETE | Publik (GET), Admin/SuperAdmin (PUT/DELETE) | Detail, update, & hapus kategori tiket |
+| `/api/seats?kategori_id=` | GET | Publik | Daftar kursi per kategori & status (`available`/`locked`/`booked`) |
+| `/api/seats/generate` | POST | Admin, SuperAdmin | Generate nomor kursi massal |
+| `/api/seats/lock` | POST | Customer, Admin, SuperAdmin | Kunci kursi sementara secara atomik |
+| `/api/seats/unlock` | POST | Customer, Admin, SuperAdmin | Bebaskan kunci kursi |
+| `/api/orders` | POST, GET | Customer, Admin, SuperAdmin | Buat pesanan (checkout) & riwayat pesanan |
+| `/api/orders/:id` | GET | Customer, Admin, SuperAdmin | Detail pesanan beserta rincian item & kursi |
+| `/api/orders/:id/cancel` | POST | Customer, Admin, SuperAdmin | Batalkan pesanan pending |
+| `/api/payments/:orderId/create` | POST | Customer, Admin, SuperAdmin | Buat transaksi Snap Token Midtrans |
+| `/api/payments/:orderId` | GET | Customer, Admin, SuperAdmin | Status & sinkronisasi pembayaran dengan Midtrans |
+| `/api/payments/notification` | POST | Publik | Webhook notifikasi pembayaran dari Midtrans |
+| `/api/payments/needs-refund` | GET | Admin, SuperAdmin | Daftar pembayaran terlambat yang butuh refund manual |
+| `/api/tickets` | GET | Customer, Admin, SuperAdmin | Daftar e-ticket resmi milik user |
+| `/api/tickets/:id` | GET | Customer, Admin, SuperAdmin | Detail tiket + embed SVG QR Code |
+| `/api/tickets/:id/download` | GET | Customer, Admin, SuperAdmin | Download QR Code tiket sebagai file PNG |
+| `/api/scanner/check-in` | POST | Scanner, Admin, SuperAdmin | Scan & validasi QR Code tiket (`kode_unik` + `event_id`) |
+| `/api/scanner/scanned-tickets` | GET | Scanner, Admin, SuperAdmin | Riwayat tiket yang dipindai oleh petugas ini |
 | `/api/scanner/assigned-events` | GET | Scanner | Daftar event yang ditugaskan ke scanner |
-| `/api/scanner/events/:eventId/scanned` | GET | Scanner, Admin, SuperAdmin | Rekap scan per event (Scanner harus ditugaskan) |
-| `/api/scanner/events/:eventId/assignments` | GET, POST | Admin, SuperAdmin | Lihat atau tugaskan scanner ke event |
-| `/api/scanner/events/:eventId/assignments/:scannerId` | DELETE | Admin, SuperAdmin | Cabut penugasan scanner |
+| `/api/scanner/events/:eventId/scanned` | GET | Scanner, Admin, SuperAdmin | Rekap seluruh tiket yang telah di-scan per event |
+| `/api/scanner/events/:eventId/assignments` | GET, POST | Admin, SuperAdmin | Lihat atau tugaskan petugas scanner ke event |
+| `/api/scanner/events/:eventId/assignments/:scannerId` | DELETE | Admin, SuperAdmin | Cabut penugasan petugas scanner dari event |

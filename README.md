@@ -99,14 +99,19 @@ npm install
    - `config/migrations/007_security_hardening.sql` — **wajib** (unique tiket per kursi + Row Level Security). Jalankan **sebelum** men-deploy kode backend terbaru.
    - `config/migrations/008_business_rules_and_hardening.sql` — **wajib**, jalankan setelah 007 dan **sebelum** deploy kode terbaru. Isinya: status pembayaran `refunded` + kolom `needs_refund`, email unik tanpa membedakan huruf besar/kecil, constraint data (harga/kuota), index, fungsi pemeliharaan, dan jadwal pg_cron baru (melepas lock kursi dengan aman & mengubah status event otomatis). Aman dijalankan berulang. Menggantikan job pg_cron versi 006.
    - `config/migrations/009_scanner_event_assignments.sql` — **wajib** untuk membatasi Scanner ke event yang ditugaskan.
+4. Buka menu **Storage** di dashboard Supabase → pastikan terdapat 2 **Public Bucket** berikut untuk fitur unggah gambar:
+   - **`events`** (Public) — tempat penyimpanan gambar banner konser (`banners/...`).
+   - **`venues`** (Public) — tempat penyimpanan foto tempat konser (`venues/...`).
 
 > ⚠️ `schema.sql` hanya untuk database **kosong**. Baris `DROP TABLE` di dalamnya sengaja di-comment karena menghapus semua data.
 
 ### 4. Konfigurasi Environment (`.env`)
-Buat file `.env` di dalam folder `API` berdasarkan contoh di `.env.example`:
+Buat file `.env` di dalam folder `API` berdasarkan contoh di `.env.example`.
+
+> ⚠️ **Variabel Wajib**: Server akan menolak berjalan (`process.exit(1)`) apabila salah satu dari 5 variabel wajib berikut belum diisi: `JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `DATABASE_URL`, dan `MIDTRANS_SERVER_KEY`.
 
 ```env
-# Supabase
+# Supabase (SUPABASE_URL & SUPABASE_SECRET_KEY WAJIB)
 SUPABASE_URL=https://xxxx.supabase.co
 SUPABASE_PUBLISHABLE_KEY=sb_publishable_xxx
 SUPABASE_SECRET_KEY=sb_secret_xxx
@@ -116,7 +121,7 @@ SUPABASE_SECRET_KEY=sb_secret_xxx
 JWT_SECRET=isi_dengan_string_acak_hasil_perintah_di_atas
 JWT_EXPIRES_IN=1d
 
-# PostgreSQL Connection String (Pooler Supabase)
+# PostgreSQL Connection String (Pooler Supabase) — WAJIB
 DATABASE_URL=postgresql://postgres.xxxx:password@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres
 
 # Port Server (default 5000)
@@ -125,7 +130,7 @@ PORT=5000
 # CORS Allowed Origins (pisahkan dengan koma)
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
 
-# Midtrans Payment Gateway (Sandbox)
+# Midtrans Payment Gateway (Sandbox) — MIDTRANS_SERVER_KEY WAJIB
 MIDTRANS_SERVER_KEY=SB-Mid-server-xxxx
 MIDTRANS_CLIENT_KEY=Mid-client-xxxx
 MIDTRANS_SIGNATURE_KEY=SB-Mid-server-xxxx
@@ -141,16 +146,27 @@ TRUST_PROXY=0
 # DB_SSL_CA=<isi sertifikat CA; newline dapat ditulis sebagai \n>
 # DB_SSL_REJECT_UNAUTHORIZED=true  # aktifkan verifikasi juga di development/test
 
-# Aturan bisnis (opsional; ini nilai default)
+# Aturan bisnis & Cache Auth (opsional; ini nilai default)
 MAX_SEATS_PER_ORDER=6          # maks kursi per order & maks kursi yang boleh ditahan satu user per event
 ORDER_PAYMENT_MINUTES=15       # batas waktu bayar setelah order dibuat
 DEFAULT_LOCK_MINUTES=15
 MAX_LOCK_MINUTES=60
 CHECKIN_OPENS_HOURS_BEFORE=6   # check-in dibuka N jam sebelum acara
 CHECKIN_CLOSES_HOURS_AFTER=12  # check-in ditutup N jam setelah acara mulai
+AUTH_USER_CACHE_TTL_MS=15000   # durasi cache pengecekan status/role user di DB (ms)
 ```
 
-### 5. Menjalankan Server
+### 5. Seeding Data Konser & Menjalankan Server
+*(Opsional)* Jika database masih kosong, Anda dapat mengisi data awal konser beserta kategori tiketnya (Bruno Mars, Coldplay, Taylor Swift, Billie Eilish, Dua Lipa) atau membersihkan event dummy pengujian dengan skrip berikut:
+```bash
+# Mengisi data contoh konser & kategori tiket
+node seed_concerts.js
+
+# (Opsional) Membersihkan event dummy/test dari database
+node clean_events.js
+```
+
+Menjalankan server API:
 ```bash
 # Mode Produksi
 npm start
@@ -353,18 +369,37 @@ API/
 │   ├── venueTypes.js
 │   └── genres.js
 ├── routes/                            # Definisi rute URL API
+│   ├── authRoutes.js
+│   ├── userRoutes.js
+│   ├── eventRoutes.js
+│   ├── ticketCategoryRoutes.js
+│   ├── seatRoutes.js
+│   ├── orderRoutes.js
+│   ├── paymentRoutes.js
+│   ├── ticketRoutes.js
+│   ├── scannerRoutes.js
+│   ├── venueRoutes.js
+│   ├── venueTypeRoutes.js
+│   └── genreRoutes.js
 ├── validators/                        # Skema validasi input Zod
 │   ├── authValidator.js
+│   ├── eventValidator.js
+│   ├── genreValidator.js
 │   ├── orderValidator.js
+│   ├── paymentValidator.js
 │   ├── scannerValidator.js
 │   ├── seatValidator.js
-│   └── userValidator.js
+│   ├── ticketCategoryValidator.js
+│   ├── userValidator.js
+│   └── venueValidator.js
 ├── utils/                             # Helper & utilitas
 │   ├── httpError.js                    # Pemetaan error API tanpa detail internal
 │   ├── logger.js                      # Pino logger & HTTP serializer
 │   ├── midtransService.js             # Integrasi Midtrans Snap & Webhook
 │   ├── qrCodeGenerator.js             # Generator SVG, PNG Buffer, DataURL
 │   └── storageService.js              # Pengunggah file ke Supabase Storage
+├── docs/                              # Dokumentasi spesifikasi teknis tambahan
+│   └── QR_CODE_SPEC.md                # Spesifikasi format & keamanan QR Code tiket
 ├── tests/                             # Pengujian otomatis Jest & Supertest
 │   ├── auth.test.js
 │   ├── orders.test.js
@@ -382,10 +417,14 @@ API/
 │   │   └── webhook.test.js
 │   └── utils/testHelpers.js
 ├── app.js                             # Inisialisasi Express server
+├── seed_concerts.js                   # Skrip seeder data konser & kategori tiket
+├── clean_events.js                    # Skrip pembersih event dummy/test
 ├── jest.config.js                     # Konfigurasi Jest
 ├── package.json                       # Konfigurasi paket & skrip npm
 ├── README.md                          # Dokumentasi utama proyek
-└── TESTING_GUIDE.md                   # Panduan testing langkah-demi-langkah
+├── TESTING_GUIDE.md                   # Panduan testing langkah-demi-langkah
+├── ERD.md                             # Dokumentasi Entity Relationship Diagram (Mermaid)
+└── UML.md                             # Dokumentasi Class, Sequence, Activity & Use Case Diagram
 ```
 
 ---
