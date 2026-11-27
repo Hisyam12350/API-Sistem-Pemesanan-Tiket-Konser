@@ -1,3 +1,5 @@
+// Node.js v24 di Windows mencoba IPv6 lebih dulu -> fetch ke api.sandbox.midtrans.com sering timeout.
+require('dns').setDefaultResultOrder('ipv4first');
 require('dotenv').config();
 const { validateEnv } = require('./config/envValidation');
 validateEnv();

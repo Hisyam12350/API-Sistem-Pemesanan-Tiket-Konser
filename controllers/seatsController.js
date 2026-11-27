@@ -1,7 +1,21 @@
+const jwt = require('jsonwebtoken');
+const { JWT_SECRET } = require('../config/jwt.js');
 const Seat = require('../models/seats.js');
 const TicketCategory = require('../models/ticketCategories.js');
 const { mapError } = require('../utils/httpError.js');
 const { DEFAULT_LOCK_MINUTES, MAX_LOCK_MINUTES, MAX_SEATS_PER_ORDER } = require('../config/limits.js');
+
+function getOptionalUserId(req) {
+  const authHeader = req.headers && req.headers.authorization;
+  const match = typeof authHeader === 'string' ? /^Bearer +(\S+)$/i.exec(authHeader) : null;
+  if (!match) return null;
+  try {
+    const decoded = jwt.verify(match[1], JWT_SECRET, { algorithms: ['HS256'] });
+    return decoded && decoded.id ? Number(decoded.id) : null;
+  } catch {
+    return null;
+  }
+}
 
 const MAX_GENERATE = 500; // batas aman jumlah kursi per request generate
 
@@ -26,7 +40,8 @@ const seatsController = {
         return res.status(404).json({ success: false, message: `Kategori tiket dengan ID ${kategori_id} tidak ditemukan.` });
       }
 
-      const result = await Seat.getSeatsByCategory(kategori_id);
+      const viewerUserId = getOptionalUserId(req);
+      const result = await Seat.getSeatsByCategory(kategori_id, viewerUserId);
       res.status(200).json({ success: true, message: 'Daftar kursi', data: result });
     } catch (error) {
       mapError(error, res, 'Error on getSeats');

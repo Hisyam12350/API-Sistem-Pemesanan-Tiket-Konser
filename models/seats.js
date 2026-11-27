@@ -16,16 +16,49 @@ const STALE_LOCK_SQL = `(s.status_kursi = 'locked' AND s.locked_until < NOW()
 const Seat = {
   // Hanya MEMBACA. Lock basi ditampilkan sebagai 'available' tanpa menulis ke DB
   // (sebelumnya GET publik melakukan UPDATE; pembersihan sebenarnya dilakukan pg_cron & saat lock).
-  async getSeatsByCategory(kategoriId) {
+  async getSeatsByCategory(kategoriId, viewerUserId = null) {
     const res = await pool.query(
       `SELECT s.id, s.kategori_id, s.nomor_kursi,
-              CASE WHEN ${STALE_LOCK_SQL} THEN 'available'::seat_status ELSE s.status_kursi END AS status_kursi,
-              CASE WHEN ${STALE_LOCK_SQL} THEN NULL ELSE s.locked_until END AS locked_until,
+              CASE
+                WHEN EXISTS (
+                  SELECT 1 FROM tickets t
+                   WHERE t.seat_id = s.id AND t.status_tiket <> 'cancelled'
+                ) THEN 'booked'::seat_status
+                WHEN ${STALE_LOCK_SQL} THEN 'available'::seat_status
+                WHEN (
+                  s.status_kursi = 'locked'
+                  AND EXISTS (
+                    SELECT 1
+                      FROM order_item_seats ois
+                      JOIN order_items oi ON oi.id = ois.order_item_id
+                      JOIN orders o ON o.id = oi.order_id
+                     WHERE ois.seat_id = s.id
+                       AND (o.status_order <> 'pending' OR o.batas_waktu_bayar < NOW())
+                  )
+                ) THEN 'available'::seat_status
+                ELSE s.status_kursi
+              END AS status_kursi,
+              CASE
+                WHEN EXISTS (
+                  SELECT 1 FROM tickets t
+                   WHERE t.seat_id = s.id AND t.status_tiket <> 'cancelled'
+                ) THEN NULL
+                WHEN ${STALE_LOCK_SQL} THEN NULL
+                ELSE s.locked_until
+              END AS locked_until,
+              (
+                $2::bigint IS NOT NULL
+                AND s.status_kursi = 'locked'
+                AND s.locked_by = $2::bigint
+                AND (s.locked_until IS NULL OR s.locked_until >= NOW())
+                AND NOT EXISTS (SELECT 1 FROM order_item_seats ois WHERE ois.seat_id = s.id)
+                AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.seat_id = s.id AND t.status_tiket <> 'cancelled')
+              ) AS locked_by_me,
               s.created_at
          FROM seats s
         WHERE s.kategori_id = $1
-        ORDER BY s.nomor_kursi ASC`,
-      [kategoriId]
+        ORDER BY s.id ASC`,
+      [kategoriId, viewerUserId]
     );
     return res.rows;
   },
@@ -77,14 +110,34 @@ const Seat = {
     try {
       await client.query('BEGIN');
 
+      // Lepaskan kursi dari order pending yang sudah melewati batas waktu bayar (bila cron belum berjalan)
+      await client.query(
+        `UPDATE orders
+            SET status_order = 'expired'
+          WHERE status_order = 'pending'
+            AND batas_waktu_bayar < NOW()
+            AND id IN (
+              SELECT oi.order_id
+                FROM order_items oi
+                JOIN order_item_seats ois ON ois.order_item_id = oi.id
+               WHERE ois.seat_id = ANY($1::bigint[])
+            )`,
+        [seatIds]
+      );
+
       const found = await client.query(
         `SELECT s.id,
                 e.id AS event_id,
                 (e.status = 'upcoming' AND e.waktu_event > NOW()) AS sales_open,
-                (   s.status_kursi = 'available'
-                 OR ${STALE_LOCK_SQL}
-                 OR (s.status_kursi = 'locked' AND s.locked_by = $2
-                     AND NOT EXISTS (SELECT 1 FROM order_item_seats ois WHERE ois.seat_id = s.id))
+                (   NOT EXISTS (
+                      SELECT 1 FROM tickets t
+                       WHERE t.seat_id = s.id AND t.status_tiket <> 'cancelled'
+                    )
+                 AND (   s.status_kursi = 'available'
+                      OR ${STALE_LOCK_SQL}
+                      OR (s.status_kursi = 'locked' AND s.locked_by = $2
+                          AND NOT EXISTS (SELECT 1 FROM order_item_seats ois WHERE ois.seat_id = s.id))
+                     )
                 ) AS free
            FROM seats s
            JOIN ticket_categories tc ON tc.id = s.kategori_id

@@ -151,14 +151,16 @@ const Order = {
     // Satu query (sebelumnya N+1: satu query kursi per item).
     const itemsRes = await pool.query(
       `SELECT oi.id, oi.order_id, oi.kategori_id, oi.jumlah, oi.harga_satuan, oi.created_at,
+              tc.nama_kategori,
               COALESCE(
                 json_agg(json_build_object('id', s.id, 'nomor_kursi', s.nomor_kursi, 'status_kursi', s.status_kursi)
                          ORDER BY s.id) FILTER (WHERE s.id IS NOT NULL), '[]'::json) AS seats
          FROM order_items oi
+         LEFT JOIN ticket_categories tc ON tc.id = oi.kategori_id
          LEFT JOIN order_item_seats ois ON ois.order_item_id = oi.id
          LEFT JOIN seats s ON s.id = ois.seat_id
         WHERE oi.order_id = $1
-        GROUP BY oi.id
+        GROUP BY oi.id, tc.nama_kategori
         ORDER BY oi.id`,
       [id]
     );

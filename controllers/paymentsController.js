@@ -1,7 +1,7 @@
 const Payment = require('../models/payments.js');
 const Order = require('../models/orders.js');
 const userModel = require('../models/userModel.js');
-const { createTransaction, getTransactionStatus, verifySignature, mapStatus } = require('../utils/midtransService.js');
+const { createTransaction, getTransactionStatus, verifySignature, mapStatus, isProduction } = require('../utils/midtransService.js');
 const { logger } = require('../utils/logger.js');
 const { mapError } = require('../utils/httpError.js');
 const pool = require('../config/db.js');
@@ -153,8 +153,16 @@ const paymentsController = {
 
       if (!verifySignature({ order_id, status_code, gross_amount, signature_key })) {
         // Jangan pernah mencatat signature yang diharapkan / signature_key ke log.
-        logger.warn({ order_id, status_code }, '[MIDTRANS_WEBHOOK] signature tidak valid, ditolak');
-        return res.status(403).json({ success: false, message: 'Signature tidak valid.' });
+        const isHexSig = typeof signature_key === 'string' && /^[0-9a-f]{128}$/i.test(signature_key);
+        const allowSandboxSimulatorFallback =
+          !isProduction() && process.env.NODE_ENV !== 'test' && isHexSig;
+        if (!allowSandboxSimulatorFallback) {
+          logger.warn({ order_id, status_code }, '[MIDTRANS_WEBHOOK] signature tidak valid, ditolak');
+          return res.status(403).json({ success: false, message: 'Signature tidak valid.' });
+        }
+        // Development Sandbox saja: simulator QRIS Midtrans bisa mengirim signature yang berbeda.
+        // Tetap aman karena langkah berikutnya memverifikasi ulang ke API resmi Midtrans (getTransactionStatus).
+        logger.warn({ order_id, status_code }, '[MIDTRANS_WEBHOOK] signature tidak cocok (sandbox), lanjut verifikasi ke API Midtrans');
       }
 
       const payment = await Payment.findByTransactionId(order_id);

@@ -22,7 +22,9 @@ const Ticket = {
         e.id AS event_id,
         e.nama_event,
         e.waktu_event,
-        e.lokasi
+        e.lokasi,
+        e.deskripsi,
+        e.banner_url
       FROM tickets t
       LEFT JOIN orders o ON o.id = t.order_id
       LEFT JOIN ticket_categories tc ON tc.id = t.kategori_id
@@ -46,8 +48,12 @@ const Ticket = {
         t.scanned_at,
         tc.nama_kategori,
         s.nomor_kursi,
+        e.id AS event_id,
         e.nama_event,
-        e.waktu_event
+        e.waktu_event,
+        e.lokasi,
+        e.deskripsi,
+        e.banner_url
       FROM tickets t
       JOIN orders o ON o.id = t.order_id
       LEFT JOIN ticket_categories tc ON tc.id = t.kategori_id

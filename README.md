@@ -260,9 +260,9 @@ Semua endpoint API diawali dengan base path: `/api`
 ### 💺 Kursi / Seats (`/api/seats`)
 | Method | Endpoint | Akses | Keterangan |
 |---|---|---|---|
-| GET | `/api/seats?kategori_id=` | Publik | Daftar kursi per kategori + status (`available`/`locked`/`booked`) |
+| GET | `/api/seats?kategori_id=` | Publik (opsional Bearer token) | Daftar kursi per kategori + status (`available`/`locked`/`booked`), validasi tiket aktif, serta flag `locked_by_me` bila pemanggil terautentikasi |
 | POST | `/api/seats/generate` | Admin, SuperAdmin | Generate kursi massal (`{ kategori_id, jumlah, prefix, start_number }`) |
-| POST | `/api/seats/lock` | Customer, Admin, SuperAdmin | Kunci kursi sementara saat proses checkout (`{ seat_ids, minutes }`) |
+| POST | `/api/seats/lock` | Customer, Admin, SuperAdmin | Kunci kursi sementara saat proses checkout (`{ seat_ids, minutes }`, otomatis melepas order kadaluwarsa & menolak kursi yang sudah memiliki tiket aktif) |
 | POST | `/api/seats/unlock` | Customer, Admin, SuperAdmin | Buka kunci kursi yang pernah di-lock (`{ seat_ids }`) |
 
 ### 🛒 Pesanan / Orders (`/api/orders`)
@@ -284,7 +284,7 @@ Semua endpoint API diawali dengan base path: `/api`
 ### 🎫 E-Ticket & QR Code (`/api/tickets`)
 | Method | Endpoint | Akses | Keterangan |
 |---|---|---|---|
-| GET | `/api/tickets` | Customer, Admin, SuperAdmin | Daftar seluruh tiket resmi milik user yang login |
+| GET | `/api/tickets` | Customer, Admin, SuperAdmin | Daftar seluruh tiket resmi milik user yang login beserta info event (`event_id`, `lokasi`, `deskripsi`, `banner_url`) |
 | GET | `/api/tickets/:id` | Customer, Admin, SuperAdmin | Detail e-ticket lengkap + embedded SVG QR Code |
 | GET | `/api/tickets/:id/download` | Customer, Admin, SuperAdmin | Unduh file QR Code tiket langsung sebagai gambar PNG |
 
